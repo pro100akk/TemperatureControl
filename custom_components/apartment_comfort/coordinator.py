@@ -287,11 +287,20 @@ class ComfortCoordinator(DataUpdateCoordinator):
         if entity_id not in self.owned and state.state != "off":
             self.issues.append("radiator_fan_entity: externally active")
             return
-        if state.state == "on" and state.attributes.get("percentage") == percent:
+        relay = entity_id.split(".")[0] in ("switch", "light")
+        if state.state == "on" and (relay or state.attributes.get("percentage") == percent):
+            return
+        desired = ("on",) if relay else ("percentage", percent)
+        if (self.last_commands.get(entity_id, (None, 0))[0] == desired
+                and monotonic() - self.last_commands[entity_id][1] < 60):
             return
         self.owned.add(entity_id)
         await self._persist()
-        await self._call(entity_id, "set_percentage", {"percentage": percent})
+        # A relay only supports on/off; a positive speed request means on.
+        success = (await self._call(entity_id, "turn_on") if relay else
+                   await self._call(entity_id, "set_percentage", {"percentage": percent}))
+        if success:
+            self.last_commands[entity_id] = (desired, monotonic())
 
     async def _apply(self):
         d = self.decision

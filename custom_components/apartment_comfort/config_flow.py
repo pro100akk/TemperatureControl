@@ -96,9 +96,9 @@ class FlowMixin:
                 for high, clear in (("co2_high", "co2_clear"), ("humidity_high", "humidity_clear"), ("shower_high", "shower_clear")):
                     if user_input[clear] >= user_input[high]:
                         errors["base"] = "invalid_thresholds"
-                if not errors:
-                    return self.async_create_entry(title=self._values["name"], data=self._values)
             if not errors:
+                if isinstance(self, config_entries.OptionsFlow) or step == "policy":
+                    return self.async_create_entry(title=self._values["name"], data=self._values)
                 next_step = {"user": "devices", "devices": "periods", "periods": "policy"}[step]
                 return await self._step(next_step, None)
         return self.async_show_form(step_id=step, data_schema=schema_for(step, self._values), errors=errors)
@@ -127,4 +127,6 @@ class ComfortConfigFlow(FlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
 
 class ComfortOptionsFlow(FlowMixin, config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
-        return await self._step("user", user_input)
+        return self.async_show_menu(
+            step_id="init", menu_options=["user", "devices", "periods", "policy"]
+        )

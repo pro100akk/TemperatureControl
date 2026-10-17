@@ -34,10 +34,10 @@ SENSOR_FIELDS = {
     "co2_entity": ["sensor"],
     "cooking_entity": ["binary_sensor", "input_boolean"],
     "computer_power_entity": ["sensor"],
-    "shower_exhaust_entity": ["fan", "switch"],
-    "kitchen_exhaust_entity": ["fan", "switch"],
+    "shower_exhaust_entity": ["fan", "switch", "light"],
+    "kitchen_exhaust_entity": ["fan", "switch", "light"],
 }
 ACTUATOR_FIELDS = {
-    "radiator_entity": ["climate"], "radiator_fan_entity": ["fan"],
+    "radiator_entity": ["climate"], "radiator_fan_entity": ["fan", "switch", "light"],
     "floor_entity": ["climate"], "ac_entity": ["climate"],
 }
