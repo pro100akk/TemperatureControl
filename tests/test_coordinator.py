@@ -100,6 +100,62 @@ class AdapterTests(unittest.TestCase):
             s.state = data["hvac_mode"]
         elif service == "set_temperature":
             s.attributes["temperature"] = data["temperature"]
+        elif service in ("turn_on", "turn_off"):
+            s.state = "on" if service == "turn_on" else "off"
+        elif service == "set_percentage":
+            s.state = "on" if data["percentage"] else "off"
+            s.attributes["percentage"] = data["percentage"]
+
+    async def test_relay_fan_on_off_and_no_speed_commands(self):
+        for domain in ("switch", "light"):
+            entity = f"{domain}.ventiliator"
+            self.c.config["radiator_fan_entity"] = entity
+            self.states[entity] = state("off")
+            self.hass.services.async_call.reset_mock()
+            await self.c._fan(30)
+            self.assertEqual(self.states[entity].state, "on")
+            self.hass.services.async_call.assert_awaited_once_with(
+                domain, "turn_on", {"entity_id": entity}, blocking=True)
+            await self.c._fan(60)
+            self.assertEqual(self.hass.services.async_call.await_count, 1)
+            await self.c._fan(0)
+            self.assertEqual(self.states[entity].state, "off")
+            self.assertNotIn(entity, self.c.owned)
+
+    async def test_external_relay_is_not_seized(self):
+        self.c.config["radiator_fan_entity"] = "light.ventiliator"
+        self.states["light.ventiliator"] = state("on")
+        await self.c._fan(30)
+        await self.c._fan(0)
+        self.hass.services.async_call.assert_not_awaited()
+
+    async def test_fan_speed_control_is_preserved(self):
+        self.c.config["radiator_fan_entity"] = "fan.radiator"
+        self.states["fan.radiator"] = state("off", percentage=0)
+        await self.c._fan(30)
+        await self.c._fan(60)
+        self.assertEqual(self.states["fan.radiator"].attributes["percentage"], 60)
+        self.assertEqual(self.hass.services.async_call.await_count, 2)
+
+    async def test_light_exhaust_is_read_without_commands(self):
+        self.c.config["shower_exhaust_entity"] = "light.ventiliator"
+        self.states["light.ventiliator"] = state("on")
+        await self.c.async_tick()
+        self.assertTrue(self.c.inputs.shower_exhaust)
+        self.hass.services.async_call.assert_not_awaited()
+
+    async def test_window_stops_owned_relay(self):
+        self.c.config.update(control_enabled=True, radiator_fan_entity="light.ventiliator",
+                             radiator_temperature_entity="sensor.surface", window_entity="binary_sensor.window")
+        self.c.engine.config.update(self.c.config)
+        self.states.update({"light.ventiliator": state("off"),
+                            "sensor.surface": state("40", unit_of_measurement="°C"),
+                            "binary_sensor.window": state("off")})
+        await self.c.async_tick()
+        self.assertEqual(self.states["light.ventiliator"].state, "on")
+        self.states["binary_sensor.window"].state = "on"
+        await self.c.async_tick()
+        self.assertEqual(self.states["light.ventiliator"].state, "off")
 
     async def test_observation_never_issues_commands(self):
         await self.c.async_initialize()

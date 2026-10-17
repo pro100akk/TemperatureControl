@@ -19,7 +19,7 @@ class AssetTests(unittest.TestCase):
             for section in ("config", "options"):
                 actual = set()
                 for step in data[section]["step"].values():
-                    actual |= set(step["data"])
+                    actual |= set(step.get("data", {}))
                 self.assertEqual(expected, actual, (language, section))
 
     def test_manifest_and_json_parse(self):
