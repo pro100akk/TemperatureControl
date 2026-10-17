@@ -27,10 +27,10 @@
       },
       "devices": {
         "title": "Appliances",
-        "description": "Climate appliances must support heat/cool and off. Start with observation mode. Exhausts are never controlled in v0.1. A radiator surface sensor is required for fan control.",
+        "description": "Climate appliances must support heat/cool and off. A radiator surface sensor is required for fan control. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
         "data": {
           "radiator_entity": "Radiator thermostat",
-          "radiator_fan_entity": "Radiator fan with percentage control",
+          "radiator_fan_entity": "Radiator fan or relay (fan / switch / light)",
           "floor_entity": "Floor thermostat",
           "ac_entity": "Air conditioner"
         }
@@ -111,10 +111,10 @@
       },
       "devices": {
         "title": "Appliances",
-        "description": "Climate appliances must support heat/cool and off. Start with observation mode. Exhausts are never controlled in v0.1. A radiator surface sensor is required for fan control.",
+        "description": "Climate appliances must support heat/cool and off. A radiator surface sensor is required for fan control. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
         "data": {
           "radiator_entity": "Radiator thermostat",
-          "radiator_fan_entity": "Radiator fan with percentage control",
+          "radiator_fan_entity": "Radiator fan or relay (fan / switch / light)",
           "floor_entity": "Floor thermostat",
           "ac_entity": "Air conditioner"
         }
@@ -157,6 +157,16 @@
           "shower_clear": "Shower humidity clear (%)",
           "cooling_margin": "Outdoor cooling recommendation margin (°C)",
           "window_min_temperature": "Minimum room temperature while airing (°C)"
+        }
+      },
+      "init": {
+        "title": "Settings",
+        "description": "Choose a section. Saving applies that section and preserves the other settings.",
+        "menu_options": {
+          "user": "Sensors and period entity",
+          "devices": "Appliances and relays",
+          "periods": "Periods and target temperatures",
+          "policy": "Control and ventilation thresholds"
         }
       }
     },
