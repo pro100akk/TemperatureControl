@@ -124,9 +124,9 @@ def build_translations():
         destination = COMPONENT / "translations" / f"{language}.json"
         destination.parent.mkdir(parents=True, exist_ok=True)
         rendered = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
-        destination.write_text(rendered, encoding="utf-8")
+        destination.write_text(rendered, encoding="utf-8", newline="\n")
         if language == "en":
-            (COMPONENT / "strings.json").write_text(rendered, encoding="utf-8")
+            (COMPONENT / "strings.json").write_text(rendered, encoding="utf-8", newline="\n")
 
 
 def build_archive():
