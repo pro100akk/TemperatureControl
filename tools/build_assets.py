@@ -26,7 +26,7 @@ LABELS = {
     "shower_exhaust_entity": ("Shower exhaust (observation only)", "Вентилятор душа (наблюдение)"),
     "kitchen_exhaust_entity": ("Kitchen exhaust (observation only)", "Кухонная вытяжка (наблюдение)"),
     "radiator_entity": ("Radiator thermostat", "Термоголовка батареи"),
-    "radiator_fan_entity": ("Radiator fan with percentage control", "Вентиляторы батареи с регулировкой скорости"),
+    "radiator_fan_entity": ("Radiator fan or relay (fan / switch / light)", "Вентилятор батареи или реле (fan / switch / light)"),
     "floor_entity": ("Floor thermostat", "Термостат тёплого пола"),
     "ac_entity": ("Air conditioner", "Кондиционер"),
     "control_enabled": ("Enable appliance control (off = observe)", "Управлять приборами (выключено = наблюдать)"),
@@ -95,8 +95,8 @@ def build_translations():
     descriptions = [
         ("Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
          "Выберите существующие сущности HA. Обязательны только название, основная температура и период дня. Для готовки нужен бинарный датчик/помощник; числовую мощность плиты предварительно преобразуйте в шаблонный бинарный датчик."),
-        ("Climate appliances must support heat/cool and off. Start with observation mode. Exhausts are never controlled in v0.1. A radiator surface sensor is required for fan control.",
-         "Климатические приборы должны поддерживать heat/cool и off. Начните с наблюдения. Вытяжки в v0.1 не управляются. Для обдува нужен датчик поверхности батареи."),
+        ("Climate appliances must support heat/cool and off. A radiator surface sensor is required for fan control. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
+         "Климатические приборы должны поддерживать heat/cool и off. Для обдува нужен датчик поверхности батареи. Реле switch/light: любой положительный запрос скорости означает полное включение, 0 — выключение. Снизить ночную скорость реле не может. Вытяжки поддерживают fan/switch/light только для наблюдения."),
         ("Copy the exact states from Developer Tools → States, not translated display labels. Existing alarm and day-period automations remain authoritative.",
          "Скопируйте точные состояния из Инструменты разработчика → Состояния, а не отображаемые переводы. Переходами по будильнику и времени управляют ваши существующие автоматизации."),
         ("Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
@@ -108,8 +108,20 @@ def build_translations():
             steps[step] = {"title": titles[n][index], "description": descriptions[n][index],
                            "data": {k: LABELS[k][index] for k in keys}}
         section = {"step": steps, "error": {k: v[index] for k, v in ERRORS.items()}}
+        options_section = {"step": dict(steps), "error": section["error"]}
+        options_section["step"]["init"] = {
+            "title": ("Settings", "Настройки")[index],
+            "description": ("Choose a section. Saving applies that section and preserves the other settings.",
+                            "Выберите раздел. Сохранение применяет изменения этого раздела; остальные настройки сохраняются.")[index],
+            "menu_options": {
+                "user": ("Sensors and period entity", "Датчики и сущность периода")[index],
+                "devices": ("Appliances and relays", "Приборы и реле")[index],
+                "periods": ("Periods and target temperatures", "Периоды и целевые температуры")[index],
+                "policy": ("Control and ventilation thresholds", "Управление и пороги проветривания")[index],
+            },
+        }
         data = {
-            "title": "Apartment Comfort", "config": section, "options": section,
+            "title": "Apartment Comfort", "config": section, "options": options_section,
             "entity": {
                 "climate": {"thermostat": {"name": ("Thermostat", "Термостат")[index]}},
                 "sensor": {
