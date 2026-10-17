@@ -1,0 +1,6 @@
+{
+  "name": "Apartment Comfort",
+  "homeassistant": "2025.12.0",
+  "content_in_root": false,
+  "render_readme": true
+}
