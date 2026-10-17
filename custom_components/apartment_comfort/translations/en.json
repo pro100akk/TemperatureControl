@@ -55,6 +55,13 @@
         "title": "Control and ventilation limits",
         "description": "Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
         "data": {
+          "controller": "Controller (hysteresis / PI / PID)",
+          "learning_enabled": "Learn thermal rates",
+          "forecast_minutes": "Forecast horizon (minutes)",
+          "pid_kp": "Kp (1/°C)",
+          "pid_ki": "Ki (1/(°C·minute))",
+          "pid_kd": "Kd (minute/°C; PID only)",
+          "pid_max_offset": "PI/PID maximum setpoint offset (°C)",
           "control_enabled": "Enable appliance control (off = observe)",
           "floor_enabled": "Allow backup floor heating",
           "deadband": "Heating/cooling start deviation (°C)",
@@ -77,6 +84,7 @@
       }
     },
     "error": {
+      "invalid_controller": "Select hysteresis, pi or pid.",
       "unique_periods": "Provide five distinct nonempty period states.",
       "duplicate_devices": "An appliance cannot occupy multiple roles.",
       "self_reference": "Do not select an Apartment Comfort thermostat as an appliance.",
@@ -139,6 +147,13 @@
         "title": "Control and ventilation limits",
         "description": "Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
         "data": {
+          "controller": "Controller (hysteresis / PI / PID)",
+          "learning_enabled": "Learn thermal rates",
+          "forecast_minutes": "Forecast horizon (minutes)",
+          "pid_kp": "Kp (1/°C)",
+          "pid_ki": "Ki (1/(°C·minute))",
+          "pid_kd": "Kd (minute/°C; PID only)",
+          "pid_max_offset": "PI/PID maximum setpoint offset (°C)",
           "control_enabled": "Enable appliance control (off = observe)",
           "floor_enabled": "Allow backup floor heating",
           "deadband": "Heating/cooling start deviation (°C)",
@@ -171,6 +186,7 @@
       }
     },
     "error": {
+      "invalid_controller": "Select hysteresis, pi or pid.",
       "unique_periods": "Provide five distinct nonempty period states.",
       "duplicate_devices": "An appliance cannot occupy multiple roles.",
       "self_reference": "Do not select an Apartment Comfort thermostat as an appliance.",
@@ -215,6 +231,12 @@
       },
       "target": {
         "name": "Effective target temperature"
+      },
+      "predicted_temperature": {
+        "name": "Temperature forecast"
+      },
+      "demand_percent": {
+        "name": "Requested output"
       }
     }
   }

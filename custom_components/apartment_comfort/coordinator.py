@@ -45,6 +45,8 @@ class ComfortCoordinator(DataUpdateCoordinator):
 
     async def async_initialize(self):
         saved = await self.store.async_load() or {}
+        if saved.get("model_sources") == self._model_sources():
+            self.engine.model.restore(saved.get("thermal_model"))
         self.mode = saved.get("mode", "heat")
         if self.mode not in ("off", "heat", "cool"):
             self.mode = "off"
@@ -62,12 +64,18 @@ class ComfortCoordinator(DataUpdateCoordinator):
 
     def _snapshot(self):
         return {
+            "model_sources": self._model_sources(),
+            "thermal_model": {key: dict(value) for key, value in self.engine.model.rates.items()},
             "mode": self.mode, "override": self.override,
             "override_period": self.override_period, "owned": sorted(self.owned),
             "manual_hold": self.manual_hold, "floor_locked": self.engine.floor_locked,
             "floor_started_at": (time() - (monotonic() - self.engine.floor_since)
                                  if self.engine.floor_since is not None else None),
         }
+
+    def _model_sources(self):
+        """Changing sensors/appliances invalidates coefficients from the old room setup."""
+        return {key: self.config.get(key) for key in (*SENSOR_FIELDS, *ACTUATOR_FIELDS)}
 
     def _save(self):
         self.store.async_delay_save(self._snapshot, 1)
@@ -174,15 +182,62 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 return
             self.issues = []
             self.inputs = self._read()
+            now = monotonic()
+            self.engine.model.observe(
+                self.inputs.temperature, self.inputs.outdoor_temperature,
+                self._thermal_regime(), now, self.config["learning_enabled"])
             if self.inputs.period != self.override_period and self.override is not None:
                 self.override = None
-            self.decision = self.engine.evaluate(self.inputs, monotonic(), self.mode, self.override)
+            if self.manual_hold or not self.config["control_enabled"]:
+                self.engine.pid.reset()
+            self.decision = self.engine.evaluate(self.inputs, now, self.mode, self.override)
+            self.decision.predicted_temperature = self.engine.model.forecast(
+                self.inputs.temperature, self.inputs.outdoor_temperature, self.config["forecast_minutes"])
             if self.config["control_enabled"] and not self.manual_hold:
                 await self._apply()
+                if self.issues:
+                    self.engine.pid.reset()
             elif not self.config["control_enabled"] and self.owned:
                 await self._release_all()
             self._save()
             self.async_set_updated_data(asdict(self.decision))
+
+    def _thermal_regime(self):
+        """Use confirmed actions, never requested modes as evidence of heat output."""
+        if self.manual_hold or self.inputs.window is not False:
+            return None
+        for key, value in (("cooking_entity", self.inputs.cooking),
+                           ("shower_exhaust_entity", self.inputs.shower_exhaust),
+                           ("kitchen_exhaust_entity", self.inputs.kitchen_exhaust)):
+            if self.config.get(key) and value is not False:
+                return None
+        active = []
+        for key, regime, action in (("radiator_entity", "radiator", "heating"),
+                                    ("floor_entity", "floor", "heating"),
+                                    ("ac_entity", "cooling", "cooling")):
+            if not self.config.get(key):
+                continue
+            state = self._state(key, fresh=True)
+            if state is None:
+                return None
+            actual = state.attributes.get("hvac_action")
+            if state.state == "off" or actual in ("idle", "off"):
+                continue
+            if actual != action:
+                return None
+            active.append(regime)
+        if len(active) > 1:
+            return None
+        regime = active[0] if active else "idle"
+        if self.config.get("radiator_fan_entity"):
+            fan = self._state("radiator_fan_entity", fresh=True)
+            if fan is None or fan.state not in ("on", "off"):
+                return None
+            if fan.state == "on":
+                if regime != "radiator":
+                    return None
+                regime = "radiator_fan"
+        return regime
 
     async def _call(self, entity_id, service, data=None):
         try:
@@ -323,9 +378,9 @@ class ComfortCoordinator(DataUpdateCoordinator):
                     self.issues.append(f"interlock: {key} not confirmed off")
                     await self._fan(0)
                     return
-        radiator_ok = await self._climate("radiator_entity", d.radiator, "heat", d.target)
+        radiator_ok = await self._climate("radiator_entity", d.radiator, "heat", d.actuator_target or d.target)
         await self._climate("floor_entity", d.floor, "heat", d.target)
-        await self._climate("ac_entity", d.cooling, "cool", d.target)
+        await self._climate("ac_entity", d.cooling, "cool", d.actuator_target or d.target)
         await self._fan(d.fan_percent if radiator_ok and d.radiator else 0)
 
     async def _persist(self):

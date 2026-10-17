@@ -8,6 +8,13 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "apartment_comfort"
 
 LABELS = {
+    "controller": ("Controller (hysteresis / PI / PID)", "Регулятор (hysteresis / PI / PID)"),
+    "learning_enabled": ("Learn thermal rates", "Самообучение тепловых коэффициентов"),
+    "forecast_minutes": ("Forecast horizon (minutes)", "Горизонт прогноза (минуты)"),
+    "pid_kp": ("Kp (1/°C)", "Kp (1/°C)"),
+    "pid_ki": ("Ki (1/(°C·minute))", "Ki (1/(°C·мин))"),
+    "pid_kd": ("Kd (minute/°C; PID only)", "Kd (мин/°C; только PID)"),
+    "pid_max_offset": ("PI/PID maximum setpoint offset (°C)", "Максимальное смещение уставки PI/PID (°C)"),
     "name": ("Name", "Название"),
     "temperature_entity": ("Main room temperature", "Основной датчик температуры"),
     "period_entity": ("Existing day period", "Существующая сущность периода дня"),
@@ -57,6 +64,7 @@ for period, en, ru in (
     LABELS[f"{period}_temperature"] = (f"{en}: target temperature", f"{ru}: целевая температура")
 
 ERRORS = {
+    "invalid_controller": ("Select hysteresis, pi or pid.", "Выберите hysteresis, pi или pid."),
     "unique_periods": ("Provide five distinct nonempty period states.", "Укажите пять различных непустых состояний периодов."),
     "duplicate_devices": ("An appliance cannot occupy multiple roles.", "Один прибор нельзя назначить нескольким ролям."),
     "self_reference": ("Do not select an Apartment Comfort thermostat as an appliance.", "Нельзя выбрать виртуальный термостат Apartment Comfort как прибор."),
@@ -130,6 +138,8 @@ def build_translations():
                     "recommendation": {"name": ("Ventilation recommendation", "Рекомендация по проветриванию")[index],
                                        "state": {k: v[index] for k, v in RECOMMENDATIONS.items()}},
                     "target": {"name": ("Effective target temperature", "Действующая целевая температура")[index]},
+                    "predicted_temperature": {"name": ("Temperature forecast", "Прогноз температуры")[index]},
+                    "demand_percent": {"name": ("Requested output", "Запрошенная мощность")[index]},
                 },
             },
         }

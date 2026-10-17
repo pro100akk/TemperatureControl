@@ -12,6 +12,9 @@ from homeassistant.helpers import entity_registry as er, selector
 from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, PERIODS, SENSOR_FIELDS
 
 POLICY_RANGES = {
+    "forecast_minutes": (5, 60, 5), "pid_kp": (0, 5, 0.01),
+    "pid_ki": (0, 0.5, 0.001), "pid_kd": (0, 5, 0.01),
+    "pid_max_offset": (0.5, 5, 0.1),
     "deadband": (0.1, 2, 0.1), "floor_deficit": (0.5, 5, 0.1),
     "floor_delay_minutes": (5, 180, 1), "floor_max_minutes": (5, 180, 1),
     "ac_min_off_minutes": (5, 30, 1), "night_fan_percent": (0, 100, 1),
@@ -47,7 +50,9 @@ def schema_for(step, values):
                     selector.NumberSelector({"min": 16, "max": 28, "step": 0.1, "mode": "box", "unit_of_measurement": "°C"})
                 )
     if step == "policy":
-        for key in ("control_enabled", "floor_enabled"):
+        fields[vol.Required("controller", default=values["controller"])] = selector.SelectSelector(
+            {"options": ["hysteresis", "pi", "pid"], "mode": "dropdown"})
+        for key in ("control_enabled", "floor_enabled", "learning_enabled"):
             fields[vol.Required(key, default=values[key])] = selector.BooleanSelector()
         for key, (low, high, increment) in POLICY_RANGES.items():
             fields[vol.Required(key, default=values[key])] = selector.NumberSelector(
@@ -93,6 +98,8 @@ class FlowMixin:
                     if set(ids) & {other.get(k) for k in ACTUATOR_FIELDS}:
                         errors["base"] = "device_in_use"
             if step == "policy":
+                if self._values["controller"] not in ("hysteresis", "pi", "pid"):
+                    errors["base"] = "invalid_controller"
                 for high, clear in (("co2_high", "co2_clear"), ("humidity_high", "humidity_clear"), ("shower_high", "shower_clear")):
                     if user_input[clear] >= user_input[high]:
                         errors["base"] = "invalid_thresholds"

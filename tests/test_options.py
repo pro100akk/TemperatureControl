@@ -38,6 +38,7 @@ def fake_module(name, **attrs):
 class OptionsTests(unittest.TestCase):
     def setUp(self):
         selectors = SimpleNamespace(
+            SelectSelector=lambda config: config,
             TextSelector=lambda: "text", NumberSelector=lambda config: config,
             BooleanSelector=lambda: "bool", EntitySelector=lambda config: config)
         registry = SimpleNamespace(async_get=lambda hass: SimpleNamespace(async_get=lambda entity: None))

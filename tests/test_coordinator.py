@@ -75,6 +75,43 @@ def state(value, **attrs):
 
 
 class AdapterTests(unittest.TestCase):
+    async def test_model_uses_actual_action_not_requested_mode(self):
+        self.c.inputs = self.c._read()
+        self.assertEqual(self.c._thermal_regime(), "idle")
+        self.states["climate.rad"].state = "heat"
+        self.assertIsNone(self.c._thermal_regime())
+        self.states["climate.rad"].attributes["hvac_action"] = "heating"
+        self.assertEqual(self.c._thermal_regime(), "radiator")
+        self.c.manual_hold = True
+        self.assertIsNone(self.c._thermal_regime())
+
+    async def test_learned_model_survives_restart(self):
+        for i in range(14):
+            self.c.engine.model.observe(20 + i / 12, 5, "idle", i * 300)
+        saved = self.c._snapshot()
+        restored = ComfortCoordinator(self.hass, self.entry)
+        restored.store.data = saved
+        await restored.async_initialize()
+        self.assertEqual(restored.engine.model.rates, saved["thermal_model"])
+
+    async def test_pi_setpoint_reaches_appliance(self):
+        self.c.config.update(control_enabled=True, controller="pi")
+        self.c.engine.config.update(self.c.config)
+        self.states["sensor.room"].state = "21"
+        await self.c.async_tick()
+        self.assertEqual(self.c.decision.demand_percent, 50)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 22.5)
+
+    async def test_changed_equipment_invalidates_model(self):
+        for i in range(14):
+            self.c.engine.model.observe(20 + i / 12, 5, "idle", i * 300)
+        saved = self.c._snapshot()
+        self.entry.options = self.entry.data | {"radiator_entity": "climate.replacement"}
+        restored = ComfortCoordinator(self.hass, self.entry)
+        restored.store.data = saved
+        await restored.async_initialize()
+        self.assertEqual(restored.engine.model.rates, {})
+
     def setUp(self):
         self.states = {
             "sensor.room": state("20", unit_of_measurement="°C"),

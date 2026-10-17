@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from math import exp, isfinite
 
 from .const import DEFAULTS, PERIODS
+from .adaptive import PID, ThermalModel
 
 
 def absolute_humidity(temperature: float, relative_humidity: float) -> float:
@@ -37,6 +38,9 @@ class Decision:
     target: float | None
     status: str
     reason: str
+    demand_percent: float = 0.0
+    actuator_target: float | None = None
+    predicted_temperature: float | None = None
     radiator: bool = False
     fan_percent: int = 0
     floor: bool = False
@@ -49,6 +53,8 @@ class Decision:
 class Engine:
     def __init__(self, config: dict):
         self.config = DEFAULTS | config
+        self.pid = PID()
+        self.model = ThermalModel()
         self.heating = False
         self.cooling = False
         self.deficit_since: float | None = None
@@ -149,6 +155,19 @@ class Engine:
                 self.cooling = True
             elif error >= 0:
                 self.cooling = False
+            if c["controller"] in ("pi", "pid"):
+                demand = self.pid.update(data.temperature, target, mode, now, c)
+                self.heating = mode == "heat" and demand > 0 and error > -band
+                self.cooling = mode == "cool" and demand > 0 and error < band
+                d.demand_percent = round(demand * 100, 1)
+                direction = 1 if mode == "heat" else -1
+                d.actuator_target = max(target - c["pid_max_offset"], min(
+                    target + c["pid_max_offset"],
+                    data.temperature + direction * c["pid_max_offset"] * demand))
+            else:
+                self.pid.reset()
+                d.actuator_target = target
+                d.demand_percent = 100.0 if (self.heating if mode == "heat" else self.cooling) else 0.0
             if mode == "heat" and self.heating:
                 d.radiator = bool(c.get("radiator_entity")) and data.heating_available is not False
                 if d.radiator:
@@ -160,6 +179,8 @@ class Engine:
                             c["night_state"], c["pre_sleep_state"]
                         ) else c["max_fan_percent"]
                         d.fan_percent = int(min(maximum, max(20, error * 60)))
+                        if c["controller"] in ("pi", "pid"):
+                            d.fan_percent = int(min(maximum, max(20, d.demand_percent)))
                 if error >= c["floor_deficit"]:
                     if self.deficit_since is None:
                         self.deficit_since = now
@@ -191,5 +212,6 @@ class Engine:
                 self.floor_since = None
             return d
         self.heating = self.cooling = False
+        self.pid.reset()
         self.deficit_since = self.floor_since = None
         return d
