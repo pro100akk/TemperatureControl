@@ -1,0 +1,211 @@
+{
+  "title": "Apartment Comfort",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sensors and existing day periods",
+        "description": "Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
+        "data": {
+          "name": "Name",
+          "temperature_entity": "Main room temperature",
+          "period_entity": "Existing day period",
+          "window_entity": "Window (on = open)",
+          "heating_available_entity": "District heating available (on = available)",
+          "presence_entity": "Presence (observation only)",
+          "outdoor_temperature_entity": "Outdoor temperature",
+          "pipe_temperature_entity": "Pipe temperature (observation only)",
+          "radiator_temperature_entity": "Radiator surface temperature",
+          "room_humidity_entity": "Room humidity",
+          "shower_humidity_entity": "Shower humidity",
+          "outdoor_humidity_entity": "Outdoor humidity (optional)",
+          "co2_entity": "CO2 (ppm)",
+          "cooking_entity": "Cooking (on = cooking)",
+          "computer_power_entity": "Computer power (observation only)",
+          "shower_exhaust_entity": "Shower exhaust (observation only)",
+          "kitchen_exhaust_entity": "Kitchen exhaust (observation only)"
+        }
+      },
+      "devices": {
+        "title": "Appliances",
+        "description": "Climate appliances must support heat/cool and off. Start with observation mode. Exhausts are never controlled in v0.1. A radiator surface sensor is required for fan control.",
+        "data": {
+          "radiator_entity": "Radiator thermostat",
+          "radiator_fan_entity": "Radiator fan with percentage control",
+          "floor_entity": "Floor thermostat",
+          "ac_entity": "Air conditioner"
+        }
+      },
+      "periods": {
+        "title": "Period mapping and temperatures",
+        "description": "Copy the exact states from Developer Tools → States, not translated display labels. Existing alarm and day-period automations remain authoritative.",
+        "data": {
+          "morning_state": "Morning: exact HA state",
+          "morning_temperature": "Morning: target temperature",
+          "day_state": "Day: exact HA state",
+          "day_temperature": "Day: target temperature",
+          "evening_state": "Evening: exact HA state",
+          "evening_temperature": "Evening: target temperature",
+          "pre_sleep_state": "Preparing for sleep: exact HA state",
+          "pre_sleep_temperature": "Preparing for sleep: target temperature",
+          "night_state": "Night: exact HA state",
+          "night_temperature": "Night: target temperature"
+        }
+      },
+      "policy": {
+        "title": "Control and ventilation limits",
+        "description": "Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
+        "data": {
+          "control_enabled": "Enable appliance control (off = observe)",
+          "floor_enabled": "Allow backup floor heating",
+          "deadband": "Heating/cooling start deviation (°C)",
+          "floor_deficit": "Minimum floor-heating deficit (°C)",
+          "floor_delay_minutes": "Delay before backup floor (minutes)",
+          "floor_max_minutes": "Maximum continuous floor request (minutes)",
+          "ac_min_off_minutes": "AC minimum off time (minutes)",
+          "night_fan_percent": "Pre-sleep/night fan limit (%)",
+          "max_fan_percent": "Daytime fan limit (%)",
+          "stale_minutes": "Numeric sensor freshness limit (minutes)",
+          "co2_high": "CO2 ventilation threshold (ppm)",
+          "co2_clear": "CO2 clear threshold (ppm)",
+          "humidity_high": "Room humidity high (%)",
+          "humidity_clear": "Room humidity clear (%)",
+          "shower_high": "Shower humidity high (%)",
+          "shower_clear": "Shower humidity clear (%)",
+          "cooling_margin": "Outdoor cooling recommendation margin (°C)",
+          "window_min_temperature": "Minimum room temperature while airing (°C)"
+        }
+      }
+    },
+    "error": {
+      "unique_periods": "Provide five distinct nonempty period states.",
+      "duplicate_devices": "An appliance cannot occupy multiple roles.",
+      "self_reference": "Do not select an Apartment Comfort thermostat as an appliance.",
+      "device_in_use": "An appliance is already assigned to another zone.",
+      "invalid_thresholds": "Clear thresholds must be below high thresholds."
+    }
+  },
+  "options": {
+    "step": {
+      "user": {
+        "title": "Sensors and existing day periods",
+        "description": "Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
+        "data": {
+          "name": "Name",
+          "temperature_entity": "Main room temperature",
+          "period_entity": "Existing day period",
+          "window_entity": "Window (on = open)",
+          "heating_available_entity": "District heating available (on = available)",
+          "presence_entity": "Presence (observation only)",
+          "outdoor_temperature_entity": "Outdoor temperature",
+          "pipe_temperature_entity": "Pipe temperature (observation only)",
+          "radiator_temperature_entity": "Radiator surface temperature",
+          "room_humidity_entity": "Room humidity",
+          "shower_humidity_entity": "Shower humidity",
+          "outdoor_humidity_entity": "Outdoor humidity (optional)",
+          "co2_entity": "CO2 (ppm)",
+          "cooking_entity": "Cooking (on = cooking)",
+          "computer_power_entity": "Computer power (observation only)",
+          "shower_exhaust_entity": "Shower exhaust (observation only)",
+          "kitchen_exhaust_entity": "Kitchen exhaust (observation only)"
+        }
+      },
+      "devices": {
+        "title": "Appliances",
+        "description": "Climate appliances must support heat/cool and off. Start with observation mode. Exhausts are never controlled in v0.1. A radiator surface sensor is required for fan control.",
+        "data": {
+          "radiator_entity": "Radiator thermostat",
+          "radiator_fan_entity": "Radiator fan with percentage control",
+          "floor_entity": "Floor thermostat",
+          "ac_entity": "Air conditioner"
+        }
+      },
+      "periods": {
+        "title": "Period mapping and temperatures",
+        "description": "Copy the exact states from Developer Tools → States, not translated display labels. Existing alarm and day-period automations remain authoritative.",
+        "data": {
+          "morning_state": "Morning: exact HA state",
+          "morning_temperature": "Morning: target temperature",
+          "day_state": "Day: exact HA state",
+          "day_temperature": "Day: target temperature",
+          "evening_state": "Evening: exact HA state",
+          "evening_temperature": "Evening: target temperature",
+          "pre_sleep_state": "Preparing for sleep: exact HA state",
+          "pre_sleep_temperature": "Preparing for sleep: target temperature",
+          "night_state": "Night: exact HA state",
+          "night_temperature": "Night: target temperature"
+        }
+      },
+      "policy": {
+        "title": "Control and ventilation limits",
+        "description": "Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
+        "data": {
+          "control_enabled": "Enable appliance control (off = observe)",
+          "floor_enabled": "Allow backup floor heating",
+          "deadband": "Heating/cooling start deviation (°C)",
+          "floor_deficit": "Minimum floor-heating deficit (°C)",
+          "floor_delay_minutes": "Delay before backup floor (minutes)",
+          "floor_max_minutes": "Maximum continuous floor request (minutes)",
+          "ac_min_off_minutes": "AC minimum off time (minutes)",
+          "night_fan_percent": "Pre-sleep/night fan limit (%)",
+          "max_fan_percent": "Daytime fan limit (%)",
+          "stale_minutes": "Numeric sensor freshness limit (minutes)",
+          "co2_high": "CO2 ventilation threshold (ppm)",
+          "co2_clear": "CO2 clear threshold (ppm)",
+          "humidity_high": "Room humidity high (%)",
+          "humidity_clear": "Room humidity clear (%)",
+          "shower_high": "Shower humidity high (%)",
+          "shower_clear": "Shower humidity clear (%)",
+          "cooling_margin": "Outdoor cooling recommendation margin (°C)",
+          "window_min_temperature": "Minimum room temperature while airing (°C)"
+        }
+      }
+    },
+    "error": {
+      "unique_periods": "Provide five distinct nonempty period states.",
+      "duplicate_devices": "An appliance cannot occupy multiple roles.",
+      "self_reference": "Do not select an Apartment Comfort thermostat as an appliance.",
+      "device_in_use": "An appliance is already assigned to another zone.",
+      "invalid_thresholds": "Clear thresholds must be below high thresholds."
+    }
+  },
+  "entity": {
+    "climate": {
+      "thermostat": {
+        "name": "Thermostat"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Controller status",
+        "state": {
+          "observation": "Observation only",
+          "manual_hold": "Paused after manual control",
+          "idle": "Maintaining temperature",
+          "off": "Off",
+          "blocked": "Required data unavailable",
+          "ventilating": "Window open",
+          "heating": "Radiator requested",
+          "backup_heating": "Backup floor requested",
+          "cooling": "Cooling requested"
+        }
+      },
+      "recommendation": {
+        "name": "Ventilation recommendation",
+        "state": {
+          "none": "No recommendation",
+          "check_window_sensor": "Check window sensor",
+          "close_window": "Window may be closed",
+          "close_window_cold_air_quality_unresolved": "Close window: room is cold; air quality still needs attention",
+          "keep_window_open": "Continue airing",
+          "check_air_quality_before_closing": "Check air quality before closing",
+          "open_window_briefly": "Consider brief airing: room is already cold",
+          "open_window": "Open window for airing",
+          "check_ventilation": "Check ventilation recommendations"
+        }
+      },
+      "target": {
+        "name": "Effective target temperature"
+      }
+    }
+  }
+}
