@@ -48,7 +48,9 @@
           "pre_sleep_state": "Preparing for sleep: exact HA state",
           "pre_sleep_temperature": "Preparing for sleep: target temperature",
           "night_state": "Night: exact HA state",
-          "night_temperature": "Night: target temperature"
+          "night_temperature": "Night: target temperature",
+          "pre_wake_state": "Before waking: exact HA state",
+          "pre_wake_temperature": "Before waking: target temperature"
         }
       },
       "policy": {
@@ -72,7 +74,7 @@
           "floor_delay_minutes": "Delay before backup floor (minutes)",
           "floor_max_minutes": "Maximum continuous floor request (minutes)",
           "ac_min_off_minutes": "AC minimum off time (minutes)",
-          "night_fan_percent": "Pre-sleep/night fan limit (%)",
+          "night_fan_percent": "Pre-sleep/night/before waking fan limit (%)",
           "max_fan_percent": "Daytime fan limit (%)",
           "stale_minutes": "Numeric sensor freshness limit (minutes)",
           "co2_high": "CO2 ventilation threshold (ppm)",
@@ -89,7 +91,7 @@
     "error": {
       "invalid_fan_source": "Select surface or pipe.",
       "invalid_controller": "Select hysteresis, pi or pid.",
-      "unique_periods": "Provide five distinct nonempty period states.",
+      "unique_periods": "Provide six distinct nonempty period states.",
       "duplicate_devices": "An appliance cannot occupy multiple roles.",
       "self_reference": "Do not select an Apartment Comfort thermostat as an appliance.",
       "device_in_use": "An appliance is already assigned to another zone.",
@@ -144,7 +146,9 @@
           "pre_sleep_state": "Preparing for sleep: exact HA state",
           "pre_sleep_temperature": "Preparing for sleep: target temperature",
           "night_state": "Night: exact HA state",
-          "night_temperature": "Night: target temperature"
+          "night_temperature": "Night: target temperature",
+          "pre_wake_state": "Before waking: exact HA state",
+          "pre_wake_temperature": "Before waking: target temperature"
         }
       },
       "policy": {
@@ -168,7 +172,7 @@
           "floor_delay_minutes": "Delay before backup floor (minutes)",
           "floor_max_minutes": "Maximum continuous floor request (minutes)",
           "ac_min_off_minutes": "AC minimum off time (minutes)",
-          "night_fan_percent": "Pre-sleep/night fan limit (%)",
+          "night_fan_percent": "Pre-sleep/night/before waking fan limit (%)",
           "max_fan_percent": "Daytime fan limit (%)",
           "stale_minutes": "Numeric sensor freshness limit (minutes)",
           "co2_high": "CO2 ventilation threshold (ppm)",
@@ -195,7 +199,7 @@
     "error": {
       "invalid_fan_source": "Select surface or pipe.",
       "invalid_controller": "Select hysteresis, pi or pid.",
-      "unique_periods": "Provide five distinct nonempty period states.",
+      "unique_periods": "Provide six distinct nonempty period states.",
       "duplicate_devices": "An appliance cannot occupy multiple roles.",
       "self_reference": "Do not select an Apartment Comfort thermostat as an appliance.",
       "device_in_use": "An appliance is already assigned to another zone.",

@@ -29,7 +29,7 @@ class AssetTests(unittest.TestCase):
         self.assertEqual(manifest["domain"], "apartment_comfort")
         self.assertTrue(manifest["config_flow"])
 
-    def test_all_five_periods_in_period_step(self):
+    def test_all_six_periods_in_period_step(self):
         data = json.loads((COMPONENT / "strings.json").read_text(encoding="utf-8"))
         keys = set(data["config"]["step"]["periods"]["data"])
         self.assertEqual(keys, {f"{p}_{suffix}" for p in PERIODS for suffix in ("state", "temperature")})

@@ -190,7 +190,7 @@ class Engine:
                             and (not pipe_mode or data.radiator_heating is True)
                             and fan_temperature > data.temperature + 2):
                         maximum = c["night_fan_percent"] if data.period in (
-                            c["night_state"], c["pre_sleep_state"]
+                            c["night_state"], c["pre_sleep_state"], c["pre_wake_state"]
                         ) else c["max_fan_percent"]
                         d.fan_percent = int(min(maximum, max(20, error * 60)))
                         if c["controller"] in ("pi", "pid"):

@@ -80,6 +80,20 @@ class OptionsTests(unittest.TestCase):
         self.assertEqual(result["data"]["co2_high"], 1200)
         self.assertEqual(result["data"]["night_temperature"], 19)
 
+    async def test_legacy_options_gain_pre_wake_defaults(self):
+        self.flow.config_entry.options = {k: v for k, v in self.original.items() if not k.startswith("pre_wake_")}
+        result = await self.flow.async_step_periods()
+        self.assertIn("pre_wake_state", result["data_schema"])
+        self.assertEqual(self.flow._values["pre_wake_temperature"], 22)
+        result = await self.flow.async_step_periods(DEFAULTS | {"pre_wake_state": "До будильника", "pre_wake_temperature": 23})
+        self.assertEqual(result["data"]["pre_wake_temperature"], 23)
+        self.assertEqual(result["data"]["pre_wake_state"], "До будильника")
+
+    async def test_pre_wake_state_must_be_unique_and_nonempty(self):
+        for state in ("night", "  "):
+            result = await self.flow.async_step_periods(DEFAULTS | {"pre_wake_state": state})
+            self.assertEqual(result["errors"], {"base": "unique_periods"})
+
     async def test_invalid_humidity_threshold_stays_in_form(self):
         result = await self.flow.async_step_policy(DEFAULTS | {"humidity_clear": 80})
         self.assertEqual(result["errors"], {"base": "invalid_thresholds"})

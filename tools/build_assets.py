@@ -46,7 +46,7 @@ LABELS = {
     "floor_delay_minutes": ("Delay before backup floor (minutes)", "Задержка резервного пола (минуты)"),
     "floor_max_minutes": ("Maximum continuous floor request (minutes)", "Максимальное непрерывное включение пола (минуты)"),
     "ac_min_off_minutes": ("AC minimum off time (minutes)", "Минимальная пауза кондиционера (минуты)"),
-    "night_fan_percent": ("Pre-sleep/night fan limit (%)", "Предел обдува перед сном и ночью (%)"),
+    "night_fan_percent": ("Pre-sleep/night/before waking fan limit (%)", "Предел обдува перед сном, ночью и перед пробуждением (%)"),
     "max_fan_percent": ("Daytime fan limit (%)", "Предел обдува днём (%)"),
     "stale_minutes": ("Numeric sensor freshness limit (minutes)", "Срок актуальности числовых датчиков (минуты)"),
     "co2_high": ("CO2 ventilation threshold (ppm)", "CO₂: порог проветривания (ppm)"),
@@ -62,6 +62,7 @@ for period, en, ru in (
     ("morning", "Morning", "Утро"), ("day", "Day", "День"),
     ("evening", "Evening", "Вечер"), ("pre_sleep", "Preparing for sleep", "Подготовка к ночи"),
     ("night", "Night", "Ночь"),
+    ("pre_wake", "Before waking", "Перед пробуждением"),
 ):
     LABELS[f"{period}_state"] = (f"{en}: exact HA state", f"{ru}: точное состояние в HA")
     LABELS[f"{period}_temperature"] = (f"{en}: target temperature", f"{ru}: целевая температура")
@@ -69,7 +70,7 @@ for period, en, ru in (
 ERRORS = {
     "invalid_fan_source": ("Select surface or pipe.", "Выберите поверхность батареи или трубу."),
     "invalid_controller": ("Select hysteresis, pi or pid.", "Выберите hysteresis, pi или pid."),
-    "unique_periods": ("Provide five distinct nonempty period states.", "Укажите пять различных непустых состояний периодов."),
+    "unique_periods": ("Provide six distinct nonempty period states.", "Укажите шесть различных непустых состояний периодов."),
     "duplicate_devices": ("An appliance cannot occupy multiple roles.", "Один прибор нельзя назначить нескольким ролям."),
     "self_reference": ("Do not select an Apartment Comfort thermostat as an appliance.", "Нельзя выбрать виртуальный термостат Apartment Comfort как прибор."),
     "device_in_use": ("An appliance is already assigned to another zone.", "Прибор уже назначен другой зоне этой интеграции."),

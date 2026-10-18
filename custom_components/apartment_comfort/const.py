@@ -2,14 +2,14 @@
 
 DOMAIN = "apartment_comfort"
 PLATFORMS = ["climate", "sensor"]
-PERIODS = ("morning", "day", "evening", "pre_sleep", "night")
+PERIODS = ("morning", "day", "evening", "pre_sleep", "night", "pre_wake")
 DEFAULTS = {
     "name": "Apartment Comfort",
     "morning_state": "morning", "day_state": "day", "evening_state": "evening",
-    "pre_sleep_state": "pre_sleep", "night_state": "night",
+    "pre_sleep_state": "pre_sleep", "night_state": "night", "pre_wake_state": "pre_wake",
     "morning_temperature": 22.0, "day_temperature": 22.0,
     "evening_temperature": 22.0, "pre_sleep_temperature": 21.0,
-    "night_temperature": 20.5,
+    "night_temperature": 20.5, "pre_wake_temperature": 22.0,
     "control_enabled": False, "floor_enabled": False,
     "heat_with_window_open": False,
     "radiator_compensation": True,

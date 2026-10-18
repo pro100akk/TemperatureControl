@@ -17,12 +17,20 @@ class PolicyTests(unittest.TestCase):
         return self.engine.evaluate(Inputs(**({"temperature": 21, "period": "day"} | kwargs)), now, mode)
 
     def test_all_external_periods(self):
-        for period, expected in [("morning", 22), ("day", 22), ("evening", 22), ("pre_sleep", 21), ("night", 20.5)]:
+        for period, expected in [("morning", 22), ("day", 22), ("evening", 22), ("pre_sleep", 21), ("night", 20.5), ("pre_wake", 22)]:
             self.assertEqual(self.evaluate(period=period).target, expected)
 
     def test_custom_period_values(self):
         engine = Engine({"night_state": "Сон"})
         self.assertEqual(engine.evaluate(Inputs(temperature=20, period="Сон"), 0).target, 20.5)
+
+    def test_custom_pre_wake_target_and_quiet_fan(self):
+        engine = Engine({"pre_wake_state": "Перед пробуждением", "pre_wake_temperature": 23,
+                         "radiator_entity": "climate.radiator", "radiator_fan_entity": "fan.radiator"})
+        decision = engine.evaluate(Inputs(temperature=18, period="Перед пробуждением", radiator_temperature=40), 0)
+        self.assertEqual(decision.target, 23)
+        self.assertGreater(decision.fan_percent, 0)
+        self.assertLessEqual(decision.fan_percent, 30)
 
     def test_unknown_period_blocks(self):
         decision = self.evaluate(period="unknown")
