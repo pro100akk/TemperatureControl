@@ -85,6 +85,14 @@ class OptionsTests(unittest.TestCase):
         self.assertEqual(result["errors"], {"base": "invalid_thresholds"})
         self.assertEqual(result["type"], "form")
 
+    async def test_window_heating_option_is_available_and_persisted(self):
+        schema = self.module.schema_for("policy", DEFAULTS)
+        self.assertIn("heat_with_window_open", schema)
+        self.assertFalse(DEFAULTS["heat_with_window_open"])
+        result = await self.flow.async_step_policy(DEFAULTS | {"heat_with_window_open": True})
+        self.assertTrue(result["data"]["heat_with_window_open"])
+        self.assertEqual(result["data"]["radiator_entity"], "climate.rad")
+
     async def test_duplicate_device_stays_in_form(self):
         result = await self.flow.async_step_devices({"radiator_entity": "climate.same", "floor_entity": "climate.same"})
         self.assertEqual(result["errors"], {"base": "duplicate_devices"})

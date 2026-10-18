@@ -9,6 +9,17 @@ from custom_components.apartment_comfort.engine import Engine, Inputs
 
 
 class AdaptiveTests(unittest.TestCase):
+    def test_forecast_explains_insufficient_evidence_without_fabricating_value(self):
+        model = ThermalModel()
+        self.assertEqual(model.forecast_status(20, None), "outdoor_temperature_unavailable")
+        model.observe(20, 5, "idle", 0)
+        self.assertEqual(model.forecast_status(20, 5), "learning")
+        self.train(model)
+        self.assertEqual(model.forecast_status(20, 5), "ready")
+        self.assertEqual(model.forecast_status(20, -10), "outdoor_conditions_changed")
+        model.rates["radiator"]["mae"] = 2
+        self.assertEqual(model.forecast_status(20, 5), "model_error_high")
+
     def train(self, model):
         for i in range(14):
             model.observe(20 + i / 12, 5, "radiator", i * 300)

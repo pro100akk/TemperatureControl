@@ -23,6 +23,7 @@ class Inputs:
     outdoor_temperature: float | None = None
     pipe_temperature: float | None = None
     radiator_temperature: float | None = None
+    radiator_heating: bool | None = None
     room_humidity: float | None = None
     shower_humidity: float | None = None
     outdoor_humidity: float | None = None
@@ -43,6 +44,7 @@ class Decision:
     predicted_temperature: float | None = None
     radiator: bool = False
     fan_percent: int = 0
+    fan_reason: str = "no_heat_demand"
     floor: bool = False
     cooling: bool = False
     recommendation: str = "none"
@@ -142,7 +144,7 @@ class Engine:
             d.status, d.reason = "blocked", "unknown_day_period"
         elif data.window is None:
             d.status, d.reason = "blocked", "window_state_unknown"
-        elif data.window:
+        elif data.window and not (mode == "heat" and c["heat_with_window_open"]):
             d.status, d.reason = "ventilating", "window_open"
         else:
             error = target - data.temperature
@@ -172,15 +174,28 @@ class Engine:
                 d.radiator = bool(c.get("radiator_entity")) and data.heating_available is not False
                 if d.radiator:
                     d.status, d.reason = "heating", "radiator_priority"
-                    # Without a surface sensor do not assume the radiator is hot.
-                    if (c.get("radiator_fan_entity") and data.radiator_temperature is not None
-                            and data.radiator_temperature > data.temperature + 2):
+                    pipe_mode = c["fan_temperature_source"] == "pipe"
+                    fan_temperature = data.pipe_temperature if pipe_mode else data.radiator_temperature
+                    if not c.get("radiator_fan_entity"):
+                        d.fan_reason = "not_configured"
+                    elif pipe_mode and data.radiator_heating is not True:
+                        d.fan_reason = "radiator_not_heating"
+                    elif fan_temperature is None:
+                        d.fan_reason = ("pipe_temperature_unavailable" if pipe_mode
+                                        else "surface_temperature_unavailable")
+                    else:
+                        d.fan_reason = "radiator_not_hot"
+                    # A hot supply pipe alone is not evidence of an open valve.
+                    if (c.get("radiator_fan_entity") and fan_temperature is not None
+                            and (not pipe_mode or data.radiator_heating is True)
+                            and fan_temperature > data.temperature + 2):
                         maximum = c["night_fan_percent"] if data.period in (
                             c["night_state"], c["pre_sleep_state"]
                         ) else c["max_fan_percent"]
                         d.fan_percent = int(min(maximum, max(20, error * 60)))
                         if c["controller"] in ("pi", "pid"):
                             d.fan_percent = int(min(maximum, max(20, d.demand_percent)))
+                        d.fan_reason = "requested" if d.fan_percent else "speed_limit_zero"
                 if error >= c["floor_deficit"]:
                     if self.deficit_since is None:
                         self.deficit_since = now

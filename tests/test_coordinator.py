@@ -7,6 +7,7 @@ import sys
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
+from unittest.mock import patch
 
 import bootstrap  # noqa: F401
 
@@ -75,6 +76,122 @@ def state(value, **attrs):
 
 
 class AdapterTests(unittest.TestCase):
+    async def test_pipe_mode_starts_and_stops_relay_from_actual_heating(self):
+        self.c.config.update(control_enabled=True, fan_temperature_source="pipe",
+                             pipe_temperature_entity="sensor.pipe", radiator_fan_entity="light.fan")
+        self.c.engine.config.update(self.c.config)
+        self.states["sensor.pipe"] = state("40", unit_of_measurement="°C")
+        self.states["light.fan"] = state("off")
+        self.states["climate.rad"].attributes["hvac_action"] = "idle"
+        await self.c.async_tick()
+        self.assertEqual(self.states["light.fan"].state, "off")
+        self.states["climate.rad"].attributes["hvac_action"] = "heating"
+        await self.c.async_tick()
+        self.assertEqual(self.states["light.fan"].state, "on")
+        self.assertEqual(self.c.fan_status, "on")
+        self.states["climate.rad"].attributes["hvac_action"] = "idle"
+        await self.c.async_tick()
+        self.assertEqual(self.states["light.fan"].state, "off")
+        self.assertEqual(self.c.fan_status, "radiator_not_heating")
+
+    async def test_optional_stale_sensor_does_not_reset_pi_integral(self):
+        self.c.config.update(control_enabled=True, controller="pi",
+                             outdoor_humidity_entity="sensor.outdoor_humidity")
+        self.c.engine.config.update(self.c.config)
+        self.states["sensor.room"].state = "21"
+        self.states["sensor.outdoor_humidity"] = state("50", unit_of_measurement="%")
+        self.states["sensor.outdoor_humidity"].last_reported -= timedelta(days=1)
+        with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=1000):
+            await self.c.async_tick()
+        with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=1060):
+            await self.c.async_tick()
+        self.assertGreater(self.c.engine.pid.integral, 0)
+        self.assertIn("outdoor_humidity_entity: stale", self.c.issues)
+
+    async def test_failed_command_still_resets_pi_integral(self):
+        self.c.config.update(control_enabled=True, controller="pi")
+        self.c.engine.config.update(self.c.config)
+        self.states["sensor.room"].state = "21"
+        self.hass.services.async_call.side_effect = FakeError("failed")
+        await self.c.async_tick()
+        self.assertEqual(self.c.engine.pid.integral, 0)
+        self.assertIsNone(self.c.engine.pid.previous)
+
+    async def test_compensation_does_not_seize_unowned_or_use_stale_local_sensor(self):
+        self.c.inputs.temperature = 25.5
+        self.states["climate.rad"].state = "heat"
+        self.states["climate.rad"].attributes.update(current_temperature=26, temperature=26)
+        self.assertFalse(await self.c._climate("radiator_entity", True, "heat", 26))
+        self.hass.services.async_call.assert_not_awaited()
+        self.c.owned.add("climate.rad")
+        self.states["climate.rad"].last_reported -= timedelta(days=1)
+        await self.c._climate("radiator_entity", True, "heat", 26)
+        self.assertFalse(self.c.radiator_command["compensation_available"])
+        self.assertEqual(self.c.radiator_command["setpoint"], 26)
+
+    async def test_radiator_local_sensor_compensation_and_stop_at_room_target(self):
+        self.c.config["control_enabled"] = True
+        self.states["sensor.room"].state = "25.5"
+        self.states["climate.rad"].attributes.update(current_temperature=26, temperature=26)
+        await self.c.async_initialize()
+        await self.c.async_set_target(26)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 26.5)
+        self.assertEqual(self.c.radiator_command["compensation"], 0.5)
+        self.states["sensor.room"].state = "26"
+        await self.c.async_tick()
+        self.assertEqual(self.states["climate.rad"].state, "off")
+
+    async def test_compensation_is_bounded_and_does_not_change_floor_or_ac(self):
+        self.c.inputs.temperature = 20
+        self.states["climate.rad"].attributes["current_temperature"] = 45
+        await self.c._climate("radiator_entity", True, "heat", 22)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 30)
+        self.assertEqual(self.c.radiator_command["compensation"], 10)
+        self.assertIn("radiator_entity: setpoint limit prevents heat demand", self.c.issues)
+        self.c.config["floor_entity"] = "climate.floor"
+        self.states["climate.floor"] = state("off", hvac_modes=["off", "heat"], current_temperature=30)
+        await self.c._climate("floor_entity", True, "heat", 22)
+        self.assertEqual(self.states["climate.floor"].attributes["temperature"], 22)
+
+    async def test_compensation_fahrenheit_and_disabled(self):
+        self.c.inputs.temperature = 25.5
+        self.hass.config.units.temperature_unit = "°F"
+        self.states["climate.rad"].attributes.update(current_temperature=78.8, min_temp=40, max_temp=90)
+        await self.c._climate("radiator_entity", True, "heat", 26)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 80)
+        self.c.config["radiator_compensation"] = False
+        await self.c._climate("radiator_entity", True, "heat", 26)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 79)
+
+    async def test_missing_or_invalid_local_reading_falls_back(self):
+        self.c.inputs.temperature = 20
+        for value in (None, float("nan"), "unavailable"):
+            self.states["climate.rad"].attributes["current_temperature"] = value
+            await self.c._climate("radiator_entity", True, "heat", 22)
+            self.assertEqual(self.states["climate.rad"].attributes["temperature"], 22)
+            self.assertFalse(self.c.radiator_command["compensation_available"])
+
+    async def test_unchanged_off_devices_do_not_prevent_learning(self):
+        self.c.config.update(outdoor_temperature_entity="sensor.outside", radiator_fan_entity="light.fan")
+        self.states["sensor.outside"] = state("5", unit_of_measurement="°C")
+        self.states["light.fan"] = state("off")
+        for key in ("climate.rad", "climate.ac", "light.fan"):
+            self.states[key].last_reported -= timedelta(days=2)
+        self.c.inputs = self.c._read()
+        self.assertEqual(self.c._thermal_regime(), "idle")
+        for i in range(14):
+            self.c.engine.model.observe(20, 5, self.c._thermal_regime(), i * 300)
+        self.assertEqual(self.c.forecast_status, "ready")
+        self.assertEqual(self.c.engine.model.forecast(20, 5, 30), 20)
+        self.states["light.fan"].state = "unavailable"
+        self.assertIsNone(self.c._thermal_regime())
+
+    async def test_window_heating_is_excluded_from_closed_window_forecast(self):
+        self.c.config["heat_with_window_open"] = True
+        self.c.inputs.window = True
+        self.assertIsNone(self.c._thermal_regime())
+        self.assertEqual(self.c.regime_reason, "window_open_or_unknown")
+
     async def test_model_uses_actual_action_not_requested_mode(self):
         self.c.inputs = self.c._read()
         self.assertEqual(self.c._thermal_regime(), "idle")

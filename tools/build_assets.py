@@ -22,7 +22,7 @@ LABELS = {
     "heating_available_entity": ("District heating available (on = available)", "Центральное отопление доступно (on = работает)"),
     "presence_entity": ("Presence (observation only)", "Присутствие (наблюдение)"),
     "outdoor_temperature_entity": ("Outdoor temperature", "Уличная температура"),
-    "pipe_temperature_entity": ("Pipe temperature (observation only)", "Температура трубы (наблюдение)"),
+    "pipe_temperature_entity": ("Pipe temperature", "Температура трубы"),
     "radiator_temperature_entity": ("Radiator surface temperature", "Температура поверхности батареи"),
     "room_humidity_entity": ("Room humidity", "Влажность в квартире"),
     "shower_humidity_entity": ("Shower humidity", "Влажность в душе"),
@@ -38,6 +38,9 @@ LABELS = {
     "ac_entity": ("Air conditioner", "Кондиционер"),
     "control_enabled": ("Enable appliance control (off = observe)", "Управлять приборами (выключено = наблюдать)"),
     "floor_enabled": ("Allow backup floor heating", "Разрешить резервный нагрев пола"),
+    "heat_with_window_open": ("Allow heating while the window is open", "Разрешить отопление при открытом окне"),
+    "radiator_compensation": ("Compensate radiator sensor temperature (up to 10 °C)", "Компенсировать датчик термоголовки (до 10 °C)"),
+    "fan_temperature_source": ("Radiator fan temperature source", "Режим контроля обдува батареи"),
     "deadband": ("Heating/cooling start deviation (°C)", "Отклонение для начала нагрева/охлаждения (°C)"),
     "floor_deficit": ("Minimum floor-heating deficit (°C)", "Минимальный дефицит для включения пола (°C)"),
     "floor_delay_minutes": ("Delay before backup floor (minutes)", "Задержка резервного пола (минуты)"),
@@ -64,6 +67,7 @@ for period, en, ru in (
     LABELS[f"{period}_temperature"] = (f"{en}: target temperature", f"{ru}: целевая температура")
 
 ERRORS = {
+    "invalid_fan_source": ("Select surface or pipe.", "Выберите поверхность батареи или трубу."),
     "invalid_controller": ("Select hysteresis, pi or pid.", "Выберите hysteresis, pi или pid."),
     "unique_periods": ("Provide five distinct nonempty period states.", "Укажите пять различных непустых состояний периодов."),
     "duplicate_devices": ("An appliance cannot occupy multiple roles.", "Один прибор нельзя назначить нескольким ролям."),
@@ -90,6 +94,34 @@ STATUSES = {
     "cooling": ("Cooling requested", "Запрошено охлаждение"),
 }
 
+FORECAST_STATUSES = {
+    "disabled": ("Learning disabled", "Обучение выключено"),
+    "room_temperature_unavailable": ("Room temperature unavailable", "Нет актуальной комнатной температуры"),
+    "outdoor_temperature_unavailable": ("Outdoor temperature unavailable", "Нет актуальной уличной температуры"),
+    "operating_state_unknown": ("Appliance operation unconfirmed", "Работа приборов не подтверждена"),
+    "manual_hold": ("Paused after manual control", "Пауза после ручного управления"),
+    "window_open_or_unknown": ("Window open or unknown", "Окно открыто или состояние неизвестно"),
+    "disturbance_active_or_unknown": ("Cooking/exhaust active or unknown", "Готовка или вытяжка активна либо неизвестна"),
+    "learning": ("Collecting stable observations", "Накопление стабильных наблюдений"),
+    "model_error_high": ("Model error too high", "Слишком большая ошибка модели"),
+    "outdoor_conditions_changed": ("Outdoor conditions changed", "Изменились уличные условия"),
+    "ready": ("Forecast ready", "Прогноз готов"),
+}
+FAN_STATUSES = {
+    "not_configured": ("Fan not configured", "Вентилятор не выбран"),
+    "observation": ("Observation only", "Наблюдение"),
+    "manual_hold": ("Paused after manual control", "Пауза после ручного управления"),
+    "no_heat_demand": ("No radiator demand", "Нет запроса нагрева батареи"),
+    "surface_temperature_unavailable": ("Surface temperature unavailable", "Нет актуальной температуры поверхности батареи"),
+    "pipe_temperature_unavailable": ("Pipe temperature unavailable", "Нет актуальной температуры трубы"),
+    "radiator_not_heating": ("Radiator heating unconfirmed", "Нагрев термоголовки не подтверждён"),
+    "radiator_not_hot": ("Radiator not hot enough", "Батарея недостаточно горячая"),
+    "speed_limit_zero": ("Fan limit is zero", "Предел скорости равен нулю"),
+    "waiting_or_blocked": ("Waiting for fan or control blocked", "Ожидание вентилятора или блокировка управления"),
+    "on": ("Fan on", "Вентилятор включён"),
+    "requested": ("Fan requested", "Запрошен обдув"),
+}
+
 
 def build_translations():
     sensors = [k for k in LABELS if k.endswith("_entity") and k not in (
@@ -103,8 +135,8 @@ def build_translations():
     descriptions = [
         ("Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
          "Выберите существующие сущности HA. Обязательны только название, основная температура и период дня. Для готовки нужен бинарный датчик/помощник; числовую мощность плиты предварительно преобразуйте в шаблонный бинарный датчик."),
-        ("Climate appliances must support heat/cool and off. A radiator surface sensor is required for fan control. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
-         "Климатические приборы должны поддерживать heat/cool и off. Для обдува нужен датчик поверхности батареи. Реле switch/light: любой положительный запрос скорости означает полное включение, 0 — выключение. Снизить ночную скорость реле не может. Вытяжки поддерживают fan/switch/light только для наблюдения."),
+        ("Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
+         "Климатические приборы должны поддерживать heat/cool и off. Для обдува по умолчанию нужен датчик поверхности батареи; в настройках управления можно выбрать датчик трубы вместе с подтверждённым нагревом термоголовки. Реле switch/light: положительный запрос скорости означает полное включение, 0 — выключение. Снизить ночную скорость реле не может. Вытяжки поддерживают fan/switch/light только для наблюдения."),
         ("Copy the exact states from Developer Tools → States, not translated display labels. Existing alarm and day-period automations remain authoritative.",
          "Скопируйте точные состояния из Инструменты разработчика → Состояния, а не отображаемые переводы. Переходами по будильнику и времени управляют ваши существующие автоматизации."),
         ("Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
@@ -130,6 +162,10 @@ def build_translations():
         }
         data = {
             "title": "Apartment Comfort", "config": section, "options": options_section,
+            "selector": {"fan_temperature_source": {"options": {
+                "surface": ("Radiator surface sensor", "По датчику поверхности батареи")[index],
+                "pipe": ("Pipe sensor and confirmed radiator heating", "По трубе и нагреву термоголовки")[index],
+            }}},
             "entity": {
                 "climate": {"thermostat": {"name": ("Thermostat", "Термостат")[index]}},
                 "sensor": {
@@ -140,6 +176,10 @@ def build_translations():
                     "target": {"name": ("Effective target temperature", "Действующая целевая температура")[index]},
                     "predicted_temperature": {"name": ("Temperature forecast", "Прогноз температуры")[index]},
                     "demand_percent": {"name": ("Requested output", "Запрошенная мощность")[index]},
+                    "forecast_status": {"name": ("Forecast status", "Состояние прогноза")[index],
+                                        "state": {k: v[index] for k, v in FORECAST_STATUSES.items()}},
+                    "fan_status": {"name": ("Radiator fan status", "Состояние обдува батареи")[index],
+                                   "state": {k: v[index] for k, v in FAN_STATUSES.items()}},
                 },
             },
         }

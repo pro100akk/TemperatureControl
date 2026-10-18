@@ -6,10 +6,20 @@ from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 
 from .entity import ComfortEntity
 
+FORECAST_STATUSES = ["disabled", "room_temperature_unavailable", "outdoor_temperature_unavailable",
+                     "operating_state_unknown", "manual_hold", "window_open_or_unknown",
+                     "disturbance_active_or_unknown", "learning", "model_error_high",
+                     "outdoor_conditions_changed", "ready"]
+FAN_STATUSES = ["not_configured", "observation", "manual_hold", "no_heat_demand",
+                "surface_temperature_unavailable", "radiator_not_hot", "speed_limit_zero",
+                "pipe_temperature_unavailable", "radiator_not_heating",
+                "waiting_or_blocked", "on", "requested"]
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities([ComfortSensor(entry.runtime_data, key)
-                        for key in ("status", "recommendation", "target", "predicted_temperature", "demand_percent")])
+                        for key in ("status", "recommendation", "target", "predicted_temperature",
+                                    "demand_percent", "forecast_status", "fan_status")])
 
 
 class ComfortSensor(ComfortEntity, SensorEntity):
@@ -23,6 +33,10 @@ class ComfortSensor(ComfortEntity, SensorEntity):
         elif key == "demand_percent":
             self._attr_native_unit_of_measurement = "%"
             self._attr_icon = "mdi:gauge"
+        elif key in ("forecast_status", "fan_status"):
+            self._attr_device_class = SensorDeviceClass.ENUM
+            self._attr_options = FORECAST_STATUSES if key == "forecast_status" else FAN_STATUSES
+            self._attr_icon = "mdi:chart-line" if key == "forecast_status" else "mdi:fan"
         elif key == "recommendation":
             self._attr_icon = "mdi:window-open-variant"
             self._attr_device_class = SensorDeviceClass.ENUM
@@ -41,6 +55,8 @@ class ComfortSensor(ComfortEntity, SensorEntity):
         d = self.coordinator.decision
         if not d:
             return None
+        if self.key in ("forecast_status", "fan_status"):
+            return getattr(self.coordinator, self.key)
         if self.key == "status":
             if self.coordinator.manual_hold:
                 return "manual_hold"
@@ -51,6 +67,17 @@ class ComfortSensor(ComfortEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         c = self.coordinator
+        if not c.decision:
+            return {}
+        if self.key == "fan_status":
+            return {"requested_percent": c.decision.fan_percent,
+                    "temperature_source": c.config["fan_temperature_source"],
+                    "pipe_temperature": c.inputs.pipe_temperature,
+                    "radiator_heating": c.inputs.radiator_heating,
+                    "reason": c.decision.fan_reason,
+                    "surface_temperature": c.inputs.radiator_temperature,
+                    "required_temperature_above": (c.inputs.temperature + 2
+                                                   if c.inputs.temperature is not None else None)}
         if self.key == "recommendation":
             return {"reasons": c.decision.ventilation_reasons,
                     "exhaust_recommendations": c.decision.exhaust_recommendations}
@@ -58,9 +85,14 @@ class ComfortSensor(ComfortEntity, SensorEntity):
             return {"decision": asdict(c.decision), "inputs": asdict(c.inputs),
                     "thermal_model": c.engine.model.rates,
                     "issues": c.issues, "floor_locked": c.engine.floor_locked,
-                    "manual_hold": c.manual_hold}
-        if self.key == "predicted_temperature":
+                    "manual_hold": c.manual_hold,
+                    "radiator_command": c.radiator_command,
+                    "forecast_status": c.forecast_status, "fan_status": c.fan_status}
+        if self.key in ("predicted_temperature", "forecast_status"):
             return {"horizon_minutes": c.config["forecast_minutes"],
+                    "status": c.forecast_status,
+                    "samples": c.engine.model.rates.get(c.engine.model.current, {}).get("count", 0),
+                    "required_samples": 12,
                     "regime": c.engine.model.current,
                     "assumption": "unchanged_operating_state_and_outdoor_conditions",
                     "coefficients": c.engine.model.rates}

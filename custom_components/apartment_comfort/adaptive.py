@@ -62,12 +62,26 @@ class ThermalModel:
         row["outdoor"] += alpha * (old_outdoor - row["outdoor"])
         row["count"] = min(100000, row["count"] + 1)
 
-    def forecast(self, temperature, outdoor, minutes):
+    def forecast_status(self, temperature, outdoor):
+        if temperature is None:
+            return "room_temperature_unavailable"
+        if outdoor is None:
+            return "outdoor_temperature_unavailable"
+        if self.current is None:
+            return "operating_state_unknown"
         row = self.rates.get(self.current)
-        if (row is None or row["count"] < 12 or row["mae"] > 1.5
-                or temperature is None or outdoor is None
-                or abs(outdoor - row["outdoor"]) > 3):
+        if row is None or row["count"] < 12:
+            return "learning"
+        if row["mae"] > 1.5:
+            return "model_error_high"
+        if abs(outdoor - row["outdoor"]) > 3:
+            return "outdoor_conditions_changed"
+        return "ready"
+
+    def forecast(self, temperature, outdoor, minutes):
+        if self.forecast_status(temperature, outdoor) != "ready":
             return None
+        row = self.rates[self.current]
         return round(temperature + row["rate"] * minutes / 60, 2)
 
 

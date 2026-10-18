@@ -13,7 +13,7 @@
           "heating_available_entity": "District heating available (on = available)",
           "presence_entity": "Presence (observation only)",
           "outdoor_temperature_entity": "Outdoor temperature",
-          "pipe_temperature_entity": "Pipe temperature (observation only)",
+          "pipe_temperature_entity": "Pipe temperature",
           "radiator_temperature_entity": "Radiator surface temperature",
           "room_humidity_entity": "Room humidity",
           "shower_humidity_entity": "Shower humidity",
@@ -27,7 +27,7 @@
       },
       "devices": {
         "title": "Appliances",
-        "description": "Climate appliances must support heat/cool and off. A radiator surface sensor is required for fan control. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
+        "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
         "data": {
           "radiator_entity": "Radiator thermostat",
           "radiator_fan_entity": "Radiator fan or relay (fan / switch / light)",
@@ -64,6 +64,9 @@
           "pid_max_offset": "PI/PID maximum setpoint offset (°C)",
           "control_enabled": "Enable appliance control (off = observe)",
           "floor_enabled": "Allow backup floor heating",
+          "heat_with_window_open": "Allow heating while the window is open",
+          "radiator_compensation": "Compensate radiator sensor temperature (up to 10 °C)",
+          "fan_temperature_source": "Radiator fan temperature source",
           "deadband": "Heating/cooling start deviation (°C)",
           "floor_deficit": "Minimum floor-heating deficit (°C)",
           "floor_delay_minutes": "Delay before backup floor (minutes)",
@@ -84,6 +87,7 @@
       }
     },
     "error": {
+      "invalid_fan_source": "Select surface or pipe.",
       "invalid_controller": "Select hysteresis, pi or pid.",
       "unique_periods": "Provide five distinct nonempty period states.",
       "duplicate_devices": "An appliance cannot occupy multiple roles.",
@@ -105,7 +109,7 @@
           "heating_available_entity": "District heating available (on = available)",
           "presence_entity": "Presence (observation only)",
           "outdoor_temperature_entity": "Outdoor temperature",
-          "pipe_temperature_entity": "Pipe temperature (observation only)",
+          "pipe_temperature_entity": "Pipe temperature",
           "radiator_temperature_entity": "Radiator surface temperature",
           "room_humidity_entity": "Room humidity",
           "shower_humidity_entity": "Shower humidity",
@@ -119,7 +123,7 @@
       },
       "devices": {
         "title": "Appliances",
-        "description": "Climate appliances must support heat/cool and off. A radiator surface sensor is required for fan control. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
+        "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
         "data": {
           "radiator_entity": "Radiator thermostat",
           "radiator_fan_entity": "Radiator fan or relay (fan / switch / light)",
@@ -156,6 +160,9 @@
           "pid_max_offset": "PI/PID maximum setpoint offset (°C)",
           "control_enabled": "Enable appliance control (off = observe)",
           "floor_enabled": "Allow backup floor heating",
+          "heat_with_window_open": "Allow heating while the window is open",
+          "radiator_compensation": "Compensate radiator sensor temperature (up to 10 °C)",
+          "fan_temperature_source": "Radiator fan temperature source",
           "deadband": "Heating/cooling start deviation (°C)",
           "floor_deficit": "Minimum floor-heating deficit (°C)",
           "floor_delay_minutes": "Delay before backup floor (minutes)",
@@ -186,12 +193,21 @@
       }
     },
     "error": {
+      "invalid_fan_source": "Select surface or pipe.",
       "invalid_controller": "Select hysteresis, pi or pid.",
       "unique_periods": "Provide five distinct nonempty period states.",
       "duplicate_devices": "An appliance cannot occupy multiple roles.",
       "self_reference": "Do not select an Apartment Comfort thermostat as an appliance.",
       "device_in_use": "An appliance is already assigned to another zone.",
       "invalid_thresholds": "Clear thresholds must be below high thresholds."
+    }
+  },
+  "selector": {
+    "fan_temperature_source": {
+      "options": {
+        "surface": "Radiator surface sensor",
+        "pipe": "Pipe sensor and confirmed radiator heating"
+      }
     }
   },
   "entity": {
@@ -237,6 +253,39 @@
       },
       "demand_percent": {
         "name": "Requested output"
+      },
+      "forecast_status": {
+        "name": "Forecast status",
+        "state": {
+          "disabled": "Learning disabled",
+          "room_temperature_unavailable": "Room temperature unavailable",
+          "outdoor_temperature_unavailable": "Outdoor temperature unavailable",
+          "operating_state_unknown": "Appliance operation unconfirmed",
+          "manual_hold": "Paused after manual control",
+          "window_open_or_unknown": "Window open or unknown",
+          "disturbance_active_or_unknown": "Cooking/exhaust active or unknown",
+          "learning": "Collecting stable observations",
+          "model_error_high": "Model error too high",
+          "outdoor_conditions_changed": "Outdoor conditions changed",
+          "ready": "Forecast ready"
+        }
+      },
+      "fan_status": {
+        "name": "Radiator fan status",
+        "state": {
+          "not_configured": "Fan not configured",
+          "observation": "Observation only",
+          "manual_hold": "Paused after manual control",
+          "no_heat_demand": "No radiator demand",
+          "surface_temperature_unavailable": "Surface temperature unavailable",
+          "pipe_temperature_unavailable": "Pipe temperature unavailable",
+          "radiator_not_heating": "Radiator heating unconfirmed",
+          "radiator_not_hot": "Radiator not hot enough",
+          "speed_limit_zero": "Fan limit is zero",
+          "waiting_or_blocked": "Waiting for fan or control blocked",
+          "on": "Fan on",
+          "requested": "Fan requested"
+        }
       }
     }
   }

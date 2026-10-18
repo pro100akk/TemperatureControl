@@ -50,9 +50,12 @@ def schema_for(step, values):
                     selector.NumberSelector({"min": 16, "max": 28, "step": 0.1, "mode": "box", "unit_of_measurement": "°C"})
                 )
     if step == "policy":
+        fields[vol.Required("fan_temperature_source", default=values["fan_temperature_source"])] = selector.SelectSelector(
+            {"options": ["surface", "pipe"], "mode": "dropdown", "translation_key": "fan_temperature_source"})
         fields[vol.Required("controller", default=values["controller"])] = selector.SelectSelector(
             {"options": ["hysteresis", "pi", "pid"], "mode": "dropdown"})
-        for key in ("control_enabled", "floor_enabled", "learning_enabled"):
+        for key in ("control_enabled", "floor_enabled", "learning_enabled",
+                    "heat_with_window_open", "radiator_compensation"):
             fields[vol.Required(key, default=values[key])] = selector.BooleanSelector()
         for key, (low, high, increment) in POLICY_RANGES.items():
             fields[vol.Required(key, default=values[key])] = selector.NumberSelector(
@@ -98,6 +101,8 @@ class FlowMixin:
                     if set(ids) & {other.get(k) for k in ACTUATOR_FIELDS}:
                         errors["base"] = "device_in_use"
             if step == "policy":
+                if self._values["fan_temperature_source"] not in ("surface", "pipe"):
+                    errors["base"] = "invalid_fan_source"
                 if self._values["controller"] not in ("hysteresis", "pi", "pid"):
                     errors["base"] = "invalid_controller"
                 for high, clear in (("co2_high", "co2_clear"), ("humidity_high", "humidity_clear"), ("shower_high", "shower_clear")):

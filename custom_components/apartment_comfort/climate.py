@@ -70,7 +70,8 @@ class ComfortClimate(ComfortEntity, ClimateEntity):
         return {"control_enabled": c.config["control_enabled"], "manual_hold": c.manual_hold,
                 "period": c.inputs.period, "planned_action": c.decision.status if c.decision else None,
                 "reason": c.decision.reason if c.decision else None,
-                "issues": c.issues, "owned_devices": sorted(c.owned)}
+                "issues": c.issues, "owned_devices": sorted(c.owned),
+                "radiator_command": c.radiator_command}
 
     async def async_set_hvac_mode(self, hvac_mode):
         if hvac_mode not in self.hvac_modes:

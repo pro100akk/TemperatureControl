@@ -1,7 +1,7 @@
 {
   "domain": "apartment_comfort",
   "name": "Apartment Comfort",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "config_flow": true,
   "integration_type": "helper",
   "iot_class": "local_push",

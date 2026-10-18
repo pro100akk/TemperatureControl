@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import asdict
 from datetime import timedelta
 import logging
-from math import isfinite
+from math import ceil, isfinite
 from time import monotonic, time
 
 from homeassistant.core import callback
@@ -39,6 +39,8 @@ class ComfortCoordinator(DataUpdateCoordinator):
         self.last_commands = {}
         self.ac_stopped = monotonic()  # Restart never bypasses compressor cooldown.
         self.issues = []
+        self.regime_reason = "operating_state_unknown"
+        self.radiator_command = {}
         self.manual_hold = False
         self.stopping = False
         self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
@@ -158,6 +160,14 @@ class ComfortCoordinator(DataUpdateCoordinator):
 
     def _read(self):
         period = self._state("period_entity")
+        radiator = self._state("radiator_entity")
+        radiator_heating = None
+        if radiator is not None:
+            actual = radiator.attributes.get("hvac_action")
+            if radiator.state == "off" or actual in ("idle", "off"):
+                radiator_heating = False
+            elif actual == "heating" and self._state("radiator_entity", fresh=True) is not None:
+                radiator_heating = True
         return Inputs(
             temperature=self._number("temperature_entity", "temperature"),
             period=period.state if period else None,
@@ -167,6 +177,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
             outdoor_temperature=self._number("outdoor_temperature_entity", "temperature"),
             pipe_temperature=self._number("pipe_temperature_entity", "temperature"),
             radiator_temperature=self._number("radiator_temperature_entity", "temperature"),
+            radiator_heating=radiator_heating,
             room_humidity=self._number("room_humidity_entity", "humidity"),
             shower_humidity=self._number("shower_humidity_entity", "humidity"),
             outdoor_humidity=self._number("outdoor_humidity_entity", "humidity"),
@@ -181,6 +192,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
             if self.stopping:
                 return
             self.issues = []
+            self.radiator_command = {}
             self.inputs = self._read()
             now = monotonic()
             self.engine.model.observe(
@@ -194,8 +206,9 @@ class ComfortCoordinator(DataUpdateCoordinator):
             self.decision.predicted_temperature = self.engine.model.forecast(
                 self.inputs.temperature, self.inputs.outdoor_temperature, self.config["forecast_minutes"])
             if self.config["control_enabled"] and not self.manual_hold:
+                read_issue_count = len(self.issues)
                 await self._apply()
-                if self.issues:
+                if len(self.issues) > read_issue_count:
                     self.engine.pid.reset()
             elif not self.config["control_enabled"] and self.owned:
                 await self._release_all()
@@ -204,12 +217,18 @@ class ComfortCoordinator(DataUpdateCoordinator):
 
     def _thermal_regime(self):
         """Use confirmed actions, never requested modes as evidence of heat output."""
-        if self.manual_hold or self.inputs.window is not False:
+        self.regime_reason = "operating_state_unknown"
+        if self.manual_hold:
+            self.regime_reason = "manual_hold"
+            return None
+        if self.inputs.window is not False:
+            self.regime_reason = "window_open_or_unknown"
             return None
         for key, value in (("cooking_entity", self.inputs.cooking),
                            ("shower_exhaust_entity", self.inputs.shower_exhaust),
                            ("kitchen_exhaust_entity", self.inputs.kitchen_exhaust)):
             if self.config.get(key) and value is not False:
+                self.regime_reason = "disturbance_active_or_unknown"
                 return None
         active = []
         for key, regime, action in (("radiator_entity", "radiator", "heating"),
@@ -217,7 +236,9 @@ class ComfortCoordinator(DataUpdateCoordinator):
                                     ("ac_entity", "cooling", "cooling")):
             if not self.config.get(key):
                 continue
-            state = self._state(key, fresh=True)
+            # Switch-like states need not report periodically. An unchanged off
+            # or idle state is not a stale numeric temperature measurement.
+            state = self._state(key)
             if state is None:
                 return None
             actual = state.attributes.get("hvac_action")
@@ -225,12 +246,14 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 continue
             if actual != action:
                 return None
+            if self._state(key, fresh=True) is None:
+                return None
             active.append(regime)
         if len(active) > 1:
             return None
         regime = active[0] if active else "idle"
         if self.config.get("radiator_fan_entity"):
-            fan = self._state("radiator_fan_entity", fresh=True)
+            fan = self._state("radiator_fan_entity")
             if fan is None or fan.state not in ("on", "off"):
                 return None
             if fan.state == "on":
@@ -238,6 +261,31 @@ class ComfortCoordinator(DataUpdateCoordinator):
                     return None
                 regime = "radiator_fan"
         return regime
+
+    @property
+    def forecast_status(self):
+        if not self.config["learning_enabled"]:
+            return "disabled"
+        status = self.engine.model.forecast_status(
+            self.inputs.temperature, self.inputs.outdoor_temperature)
+        return self.regime_reason if status == "operating_state_unknown" else status
+
+    @property
+    def fan_status(self):
+        if not self.config.get("radiator_fan_entity"):
+            return "not_configured"
+        if not self.config["control_enabled"]:
+            return "observation"
+        if self.manual_hold:
+            return "manual_hold"
+        if not self.decision:
+            return "no_heat_demand"
+        if self.decision.fan_percent:
+            state = self.hass.states.get(self.config["radiator_fan_entity"])
+            if state and state.state == "on":
+                return "on"
+            return "waiting_or_blocked"
+        return self.decision.fan_reason
 
     async def _call(self, entity_id, service, data=None):
         try:
@@ -300,6 +348,21 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 return False
         # Climate attributes are expressed in HA's configured temperature unit.
         unit = self.hass.config.units.temperature_unit
+        local = None
+        compensation = 0.0
+        if key == "radiator_entity" and self.config["radiator_compensation"]:
+            try:
+                local = TemperatureConverter.convert(
+                    float(state.attributes.get("current_temperature")), unit, "°C")
+                if not isfinite(local) or not -20 <= local <= 60:
+                    raise ValueError("invalid local temperature")
+                if self._state(key, fresh=True) is None:
+                    local = None
+                elif self.inputs.temperature is not None:
+                    compensation = min(10.0, max(0.0, local - self.inputs.temperature))
+            except (ValueError, TypeError, HomeAssistantError):
+                local = None
+        target += compensation
         native = TemperatureConverter.convert(target, "°C", unit)
         low, high = state.attributes.get("min_temp"), state.attributes.get("max_temp")
         if low is not None:
@@ -307,11 +370,20 @@ class ComfortCoordinator(DataUpdateCoordinator):
         if high is not None:
             native = min(native, high)
         step = state.attributes.get("target_temp_step", 0.5) or 0.5
-        native = round(native / step) * step
+        # Do not round a positive heat demand back down to the local reading.
+        native = (ceil(native / step - 1e-9) if local is not None
+                  else round(native / step)) * step
         if low is not None:
             native = max(native, low)
         if high is not None:
             native = min(native, high)
+        if key == "radiator_entity":
+            self.radiator_command = {"local_temperature": local,
+                                     "compensation_available": local is not None,
+                                     "compensation": compensation,
+                                     "setpoint": TemperatureConverter.convert(native, unit, "°C")}
+            if local is not None and self.radiator_command["setpoint"] <= local:
+                self.issues.append("radiator_entity: setpoint limit prevents heat demand")
         desired = (mode, native)
         current = (state.state, state.attributes.get("temperature"))
         if desired == current:

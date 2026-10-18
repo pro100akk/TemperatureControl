@@ -48,6 +48,49 @@ class PolicyTests(unittest.TestCase):
     def test_unknown_window_blocks(self):
         self.assertEqual(self.evaluate(window=None).status, "blocked")
 
+    def test_window_heating_opt_in_keeps_heat_and_fan_but_not_cooling(self):
+        self.engine.config["heat_with_window_open"] = True
+        d = self.evaluate(window=True, radiator_temperature=40, co2=1500)
+        self.assertTrue(d.radiator)
+        self.assertGreater(d.fan_percent, 0)
+        self.assertEqual(d.recommendation, "keep_window_open")
+        self.assertFalse(self.evaluate(window=True, mode="cool", temperature=25).cooling)
+        self.assertEqual(self.evaluate(window=None).status, "blocked")
+        self.assertFalse(self.evaluate(window=True, mode="off").radiator)
+
+    def test_window_opt_in_preserves_floor_delay_and_runtime_limit(self):
+        self.engine.config["heat_with_window_open"] = True
+        self.assertFalse(self.evaluate(window=True, heating_available=False).floor)
+        self.assertTrue(self.evaluate(now=1801, window=True, heating_available=False).floor)
+        self.assertFalse(self.evaluate(now=5402, window=True, heating_available=False).floor)
+
+    def test_fan_reasons_and_exact_threshold(self):
+        self.assertEqual(self.evaluate().fan_reason, "surface_temperature_unavailable")
+        self.assertEqual(self.evaluate(radiator_temperature=23).fan_reason, "radiator_not_hot")
+        self.assertEqual(self.evaluate(radiator_temperature=23.1).fan_reason, "requested")
+        self.engine.config["max_fan_percent"] = 0
+        d = self.evaluate(radiator_temperature=40)
+        self.assertEqual(d.fan_reason, "speed_limit_zero")
+        self.assertEqual(d.fan_percent, 0)
+
+    def test_pipe_fan_mode_requires_confirmed_heating_and_hot_pipe(self):
+        self.engine.config["fan_temperature_source"] = "pipe"
+        for heating in (False, None):
+            d = self.evaluate(pipe_temperature=40, radiator_heating=heating)
+            self.assertEqual(d.fan_percent, 0)
+            self.assertEqual(d.fan_reason, "radiator_not_heating")
+        self.assertEqual(self.evaluate(radiator_heating=True).fan_reason, "pipe_temperature_unavailable")
+        self.assertEqual(self.evaluate(pipe_temperature=23, radiator_heating=True).fan_percent, 0)
+        d = self.evaluate(pipe_temperature=40, radiator_heating=True)
+        self.assertGreater(d.fan_percent, 0)
+        self.assertEqual(self.evaluate(pipe_temperature=40, radiator_heating=True, window=True).fan_percent, 0)
+        self.engine.config["heat_with_window_open"] = True
+        self.assertGreater(self.evaluate(pipe_temperature=40, radiator_heating=True, window=True).fan_percent, 0)
+        self.assertEqual(self.evaluate(pipe_temperature=40, radiator_heating=True, temperature=22).fan_percent, 0)
+
+    def test_surface_mode_does_not_silently_fall_back_to_pipe(self):
+        self.assertEqual(self.evaluate(pipe_temperature=40, radiator_heating=True).fan_percent, 0)
+
     def test_radiator_has_priority_and_floor_not_used_for_small_error(self):
         d = self.evaluate(temperature=20)
         self.assertTrue(d.radiator)
