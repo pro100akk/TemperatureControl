@@ -4,6 +4,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+from .version import VERSION
 
 
 class ComfortEntity(CoordinatorEntity):
@@ -15,5 +16,5 @@ class ComfortEntity(CoordinatorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.entry.entry_id)},
             name=coordinator.config["name"], manufacturer="Apartment Comfort",
-            model="Virtual apartment controller", sw_version="0.1.0",
+            model="Virtual apartment controller", sw_version=VERSION,
         )

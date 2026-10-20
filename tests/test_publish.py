@@ -32,6 +32,17 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             publish.check_metadata(self.manifest, "sample/apartment", "v0.2.0")
 
+    def test_build_identifiers_are_not_release_versions(self):
+        for version in ("main", "bbe7f8a", "0.2.0+build.42", "01.2.0"):
+            with self.assertRaises(ValueError):
+                publish.check_metadata(self.manifest | {"version": version}, "sample/apartment")
+
+    def test_runtime_version_matches_manifest(self):
+        import json
+        from custom_components.apartment_comfort.version import VERSION
+        manifest = json.loads(publish.MANIFEST.read_text(encoding="utf-8"))
+        self.assertEqual(VERSION, manifest["version"])
+
     def test_wrong_repository_rejected(self):
         with self.assertRaises(ValueError):
             publish.check_metadata(self.manifest, "other/apartment")

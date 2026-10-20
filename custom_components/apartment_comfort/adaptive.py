@@ -19,7 +19,7 @@ class ThermalModel:
         if not isinstance(saved, dict):
             return
         for key, row in saved.items():
-            if key not in ("idle", "radiator", "radiator_fan", "floor", "cooling"):
+            if not isinstance(key, str) or len(key) > 250:
                 continue
             if (isinstance(row, dict) and all(
                     isinstance(row.get(k), (int, float)) and isfinite(row[k])
@@ -83,6 +83,35 @@ class ThermalModel:
             return None
         row = self.rates[self.current]
         return round(temperature + row["rate"] * minutes / 60, 2)
+
+    def estimate(self, data, minutes, config):
+        """Always estimate with a room reading; mark untrained assumptions explicitly."""
+        temperature, outdoor = data.temperature, data.outdoor_temperature
+        if temperature is None or not isfinite(temperature):
+            return None, "room_temperature_unavailable"
+        hours = minutes / 60
+        exchange = 0.05
+        if data.window is True:
+            exchange += config["window_exchange_per_hour"]
+            exchange += config["exhaust_exchange_per_hour"] * (
+                (data.kitchen_airflow or 0) / 100 + (0.3 if data.shower_exhaust else 0))
+        # With a closed window the shower contributes no direct outdoor exchange.
+        learned = self.forecast(temperature, outdoor, minutes) if config["learning_enabled"] else None
+        if learned is not None:
+            return round(learned + exchange * data.weather_temperature_delta * hours / 2, 2), "ready"
+        row = self.rates.get(self.current, {}) if config["learning_enabled"] else {}
+        rate = row.get("rate") if row.get("mae", 0) <= 1.5 and outdoor is not None and abs(
+            outdoor - row.get("outdoor", outdoor)) <= 3 else None
+        if rate is None:
+            rate = exchange * (outdoor - temperature) if outdoor is not None else 0
+            if data.radiator_heating:
+                rate += 1.0
+            if self.current and "floor" in self.current:
+                rate += 0.5
+            if self.current and "cooling" in self.current:
+                rate -= 1.5
+        rate += exchange * data.weather_temperature_delta / 2
+        return round(temperature + max(-12, min(12, rate)) * hours, 2), "estimated"
 
 
 class PID:

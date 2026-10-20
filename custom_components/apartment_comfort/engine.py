@@ -32,6 +32,9 @@ class Inputs:
     computer_power: float | None = None
     shower_exhaust: bool | None = None
     kitchen_exhaust: bool | None = None
+    kitchen_airflow: float | None = None
+    weather_condition: str | None = None
+    weather_temperature_delta: float = 0.0
 
 
 @dataclass
@@ -50,6 +53,8 @@ class Decision:
     recommendation: str = "none"
     ventilation_reasons: list[str] = field(default_factory=list)
     exhaust_recommendations: list[str] = field(default_factory=list)
+    kitchen_airflow_percent: float = 0
+    shower_requested: bool = False
 
 
 class Engine:
@@ -136,6 +141,18 @@ class Engine:
         target = self.target(data.period, override)
         d = Decision(target, "idle", "within_band")
         self._air(data, d)
+        night = data.period in (c["night_state"], c["pre_sleep_state"], c["pre_wake_state"])
+        if mode != "off":
+            d.shower_requested = c["shower_control_enabled"] and data.shower_humidity is not None and self.air_flags["shower"]
+            if (c["kitchen_control_enabled"] and data.window is True
+                    and data.temperature is not None and data.temperature > c["window_min_temperature"]
+                    and data.period is not None and self.target(data.period, None) is not None
+                    and (not night or c["kitchen_night_allowed"])
+                    and any(reason in d.ventilation_reasons and valid for reason, valid in (
+                        ("co2", data.co2 is not None), ("humidity", data.room_humidity is not None),
+                        ("cooking", data.cooking is True), ("free_cooling", True)))):
+                d.kitchen_airflow_percent = min(c["kitchen_airflow_percent"],
+                    c["kitchen_night_airflow_percent"] if night else 100)
         if mode == "off":
             d.status, d.reason = "off", "disabled_by_user"
         elif data.temperature is None or not isfinite(data.temperature):

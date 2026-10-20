@@ -17,6 +17,8 @@ def repository_name(value):
 
 
 def check_metadata(manifest, repository, tag=None):
+    if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", manifest.get("version", "")):
+        raise ValueError("Use a release version MAJOR.MINOR.PATCH, not a build identifier")
     url = f"https://github.com/{repository_name(repository)}"
     if manifest.get("documentation") != url or manifest.get("issue_tracker") != f"{url}/issues":
         raise ValueError("Set documentation and issue_tracker for the actual repository before publishing")

@@ -8,6 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "apartment_comfort"
 
 LABELS = {
+    "weather_entity": ("Weather (optional)", "Погода (необязательно)"),
+    "kitchen_control_enabled": ("Control kitchen exhaust", "Управлять кухонной вытяжкой"),
+    "shower_control_enabled": ("Control shower fan", "Управлять вентилятором душа"),
+    "kitchen_night_allowed": ("Allow kitchen exhaust at night", "Разрешить вытяжку перед сном, ночью и перед пробуждением"),
+    "kitchen_airflow_percent": ("Kitchen airflow (%)", "Воздухообмен вытяжки (%)"),
+    "kitchen_night_airflow_percent": ("Night airflow limit (%)", "Ночной предел воздухообмена (%)"),
+    "kitchen_speed_curve": ("Calibration command:airflow (0:0,...,100:100)", "Калибровка команда:воздухообмен (0:0,...,100:100)"),
+    "window_exchange_per_hour": ("Open window thermal exchange (1/h)", "Тепловой обмен открытого окна (1/ч)"),
+    "exhaust_exchange_per_hour": ("Full exhaust thermal exchange with open window (1/h)", "Тепловой обмен полной вытяжки при открытом окне (1/ч)"),
     "controller": ("Controller (hysteresis / PI / PID)", "Регулятор (hysteresis / PI / PID)"),
     "learning_enabled": ("Learn thermal rates", "Самообучение тепловых коэффициентов"),
     "forecast_minutes": ("Forecast horizon (minutes)", "Горизонт прогноза (минуты)"),
@@ -30,8 +39,8 @@ LABELS = {
     "co2_entity": ("CO2 (ppm)", "CO₂ (ppm)"),
     "cooking_entity": ("Cooking (on = cooking)", "Готовка (on = идёт приготовление пищи)"),
     "computer_power_entity": ("Computer power (observation only)", "Мощность компьютера (наблюдение)"),
-    "shower_exhaust_entity": ("Shower exhaust (observation only)", "Вентилятор душа (наблюдение)"),
-    "kitchen_exhaust_entity": ("Kitchen exhaust (observation only)", "Кухонная вытяжка (наблюдение)"),
+    "shower_exhaust_entity": ("Shower exhaust", "Вентилятор душа"),
+    "kitchen_exhaust_entity": ("Kitchen exhaust / dimmer", "Кухонная вытяжка / диммер"),
     "radiator_entity": ("Radiator thermostat", "Термоголовка батареи"),
     "radiator_fan_entity": ("Radiator fan or relay (fan / switch / light)", "Вентилятор батареи или реле (fan / switch / light)"),
     "floor_entity": ("Floor thermostat", "Термостат тёплого пола"),
@@ -68,6 +77,7 @@ for period, en, ru in (
     LABELS[f"{period}_temperature"] = (f"{en}: target temperature", f"{ru}: целевая температура")
 
 ERRORS = {
+    "invalid_speed_curve": ("Use strictly increasing command:airflow pairs from 0:0 to 100:100.", "Укажите возрастающие пары команда:воздухообмен от 0:0 до 100:100."),
     "invalid_fan_source": ("Select surface or pipe.", "Выберите поверхность батареи или трубу."),
     "invalid_controller": ("Select hysteresis, pi or pid.", "Выберите hysteresis, pi или pid."),
     "unique_periods": ("Provide six distinct nonempty period states.", "Укажите шесть различных непустых состояний периодов."),
@@ -96,6 +106,7 @@ STATUSES = {
 }
 
 FORECAST_STATUSES = {
+    "estimated": ("Preliminary estimate (limited evidence)", "Предварительный прогноз (недостаточно наблюдений)"),
     "disabled": ("Learning disabled", "Обучение выключено"),
     "room_temperature_unavailable": ("Room temperature unavailable", "Нет актуальной комнатной температуры"),
     "outdoor_temperature_unavailable": ("Outdoor temperature unavailable", "Нет актуальной уличной температуры"),
@@ -136,8 +147,8 @@ def build_translations():
     descriptions = [
         ("Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
          "Выберите существующие сущности HA. Обязательны только название, основная температура и период дня. Для готовки нужен бинарный датчик/помощник; числовую мощность плиты предварительно преобразуйте в шаблонный бинарный датчик."),
-        ("Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
-         "Климатические приборы должны поддерживать heat/cool и off. Для обдува по умолчанию нужен датчик поверхности батареи; в настройках управления можно выбрать датчик трубы вместе с подтверждённым нагревом термоголовки. Реле switch/light: положительный запрос скорости означает полное включение, 0 — выключение. Снизить ночную скорость реле не может. Вытяжки поддерживают fan/switch/light только для наблюдения."),
+        ("Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhaust control is optional; kitchen lights with brightness support use the calibrated dimmer curve.",
+         "Климатические приборы должны поддерживать heat/cool и off. Для обдува по умолчанию нужен датчик поверхности батареи; в настройках управления можно выбрать датчик трубы вместе с подтверждённым нагревом термоголовки. Реле switch/light: положительный запрос скорости означает полное включение, 0 — выключение. Снизить ночную скорость реле не может. Управление вытяжками включается отдельно; для диммера используется калибровочная кривая."),
         ("Copy the exact states from Developer Tools → States, not translated display labels. Existing alarm and day-period automations remain authoritative.",
          "Скопируйте точные состояния из Инструменты разработчика → Состояния, а не отображаемые переводы. Переходами по будильнику и времени управляют ваши существующие автоматизации."),
         ("Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",

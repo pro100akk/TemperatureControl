@@ -7,6 +7,7 @@
         "description": "Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
         "data": {
           "name": "Name",
+          "weather_entity": "Weather (optional)",
           "temperature_entity": "Main room temperature",
           "period_entity": "Existing day period",
           "window_entity": "Window (on = open)",
@@ -21,13 +22,13 @@
           "co2_entity": "CO2 (ppm)",
           "cooking_entity": "Cooking (on = cooking)",
           "computer_power_entity": "Computer power (observation only)",
-          "shower_exhaust_entity": "Shower exhaust (observation only)",
-          "kitchen_exhaust_entity": "Kitchen exhaust (observation only)"
+          "shower_exhaust_entity": "Shower exhaust",
+          "kitchen_exhaust_entity": "Kitchen exhaust / dimmer"
         }
       },
       "devices": {
         "title": "Appliances",
-        "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
+        "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhaust control is optional; kitchen lights with brightness support use the calibrated dimmer curve.",
         "data": {
           "radiator_entity": "Radiator thermostat",
           "radiator_fan_entity": "Radiator fan or relay (fan / switch / light)",
@@ -57,6 +58,14 @@
         "title": "Control and ventilation limits",
         "description": "Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
         "data": {
+          "kitchen_control_enabled": "Control kitchen exhaust",
+          "shower_control_enabled": "Control shower fan",
+          "kitchen_night_allowed": "Allow kitchen exhaust at night",
+          "kitchen_airflow_percent": "Kitchen airflow (%)",
+          "kitchen_night_airflow_percent": "Night airflow limit (%)",
+          "kitchen_speed_curve": "Calibration command:airflow (0:0,...,100:100)",
+          "window_exchange_per_hour": "Open window thermal exchange (1/h)",
+          "exhaust_exchange_per_hour": "Full exhaust thermal exchange with open window (1/h)",
           "controller": "Controller (hysteresis / PI / PID)",
           "learning_enabled": "Learn thermal rates",
           "forecast_minutes": "Forecast horizon (minutes)",
@@ -89,6 +98,7 @@
       }
     },
     "error": {
+      "invalid_speed_curve": "Use strictly increasing command:airflow pairs from 0:0 to 100:100.",
       "invalid_fan_source": "Select surface or pipe.",
       "invalid_controller": "Select hysteresis, pi or pid.",
       "unique_periods": "Provide six distinct nonempty period states.",
@@ -105,6 +115,7 @@
         "description": "Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
         "data": {
           "name": "Name",
+          "weather_entity": "Weather (optional)",
           "temperature_entity": "Main room temperature",
           "period_entity": "Existing day period",
           "window_entity": "Window (on = open)",
@@ -119,13 +130,13 @@
           "co2_entity": "CO2 (ppm)",
           "cooking_entity": "Cooking (on = cooking)",
           "computer_power_entity": "Computer power (observation only)",
-          "shower_exhaust_entity": "Shower exhaust (observation only)",
-          "kitchen_exhaust_entity": "Kitchen exhaust (observation only)"
+          "shower_exhaust_entity": "Shower exhaust",
+          "kitchen_exhaust_entity": "Kitchen exhaust / dimmer"
         }
       },
       "devices": {
         "title": "Appliances",
-        "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhausts support fan/switch/light for observation only.",
+        "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhaust control is optional; kitchen lights with brightness support use the calibrated dimmer curve.",
         "data": {
           "radiator_entity": "Radiator thermostat",
           "radiator_fan_entity": "Radiator fan or relay (fan / switch / light)",
@@ -155,6 +166,14 @@
         "title": "Control and ventilation limits",
         "description": "Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
         "data": {
+          "kitchen_control_enabled": "Control kitchen exhaust",
+          "shower_control_enabled": "Control shower fan",
+          "kitchen_night_allowed": "Allow kitchen exhaust at night",
+          "kitchen_airflow_percent": "Kitchen airflow (%)",
+          "kitchen_night_airflow_percent": "Night airflow limit (%)",
+          "kitchen_speed_curve": "Calibration command:airflow (0:0,...,100:100)",
+          "window_exchange_per_hour": "Open window thermal exchange (1/h)",
+          "exhaust_exchange_per_hour": "Full exhaust thermal exchange with open window (1/h)",
           "controller": "Controller (hysteresis / PI / PID)",
           "learning_enabled": "Learn thermal rates",
           "forecast_minutes": "Forecast horizon (minutes)",
@@ -197,6 +216,7 @@
       }
     },
     "error": {
+      "invalid_speed_curve": "Use strictly increasing command:airflow pairs from 0:0 to 100:100.",
       "invalid_fan_source": "Select surface or pipe.",
       "invalid_controller": "Select hysteresis, pi or pid.",
       "unique_periods": "Provide six distinct nonempty period states.",
@@ -261,6 +281,7 @@
       "forecast_status": {
         "name": "Forecast status",
         "state": {
+          "estimated": "Preliminary estimate (limited evidence)",
           "disabled": "Learning disabled",
           "room_temperature_unavailable": "Room temperature unavailable",
           "outdoor_temperature_unavailable": "Outdoor temperature unavailable",

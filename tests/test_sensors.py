@@ -40,7 +40,7 @@ class SensorTests(unittest.TestCase):
     async def test_diagnostics_report_missing_forecast_and_surface_sensor(self):
         await self.c.async_tick()
         forecast = self.module.ComfortSensor(self.c, "forecast_status")
-        self.assertEqual(forecast.native_value, "outdoor_temperature_unavailable")
+        self.assertEqual(forecast.native_value, "estimated")
         self.assertEqual(forecast.extra_state_attributes["required_samples"], 12)
         self.c.config.update(control_enabled=True, radiator_fan_entity="light.fan")
         self.c.engine.config.update(self.c.config)

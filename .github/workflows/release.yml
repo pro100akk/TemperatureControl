@@ -33,4 +33,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" dist/apartment_comfort-*.zip --verify-tag --title "Apartment Comfort $RELEASE_TAG" --generate-notes
+        run: gh release create "$RELEASE_TAG" dist/apartment_comfort-*.zip --verify-tag --title "Apartment Comfort $RELEASE_TAG" --notes-file CHANGELOG.md --latest

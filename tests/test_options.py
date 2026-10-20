@@ -99,6 +99,16 @@ class OptionsTests(unittest.TestCase):
         self.assertEqual(result["errors"], {"base": "invalid_thresholds"})
         self.assertEqual(result["type"], "form")
 
+    async def test_invalid_dimmer_curve_stays_in_form(self):
+        result = await self.flow.async_step_policy(DEFAULTS | {"kitchen_speed_curve": "0:0,50:80,100:50"})
+        self.assertEqual(result["errors"], {"base": "invalid_speed_curve"})
+
+    async def test_exhaust_cannot_also_be_radiator_fan(self):
+        result = await self.flow.async_step_user({
+            "temperature_entity": "sensor.room", "period_entity": "input_select.period",
+            "kitchen_exhaust_entity": "fan.old"})
+        self.assertEqual(result["errors"], {"base": "duplicate_devices"})
+
     async def test_window_heating_option_is_available_and_persisted(self):
         schema = self.module.schema_for("policy", DEFAULTS)
         self.assertIn("heat_with_window_open", schema)
@@ -113,6 +123,7 @@ class OptionsTests(unittest.TestCase):
 
     async def test_initial_setup_still_advances_through_wizard(self):
         flow = self.module.ComfortConfigFlow()
+        flow.hass = self.flow.hass
         result = await flow.async_step_user({"name": "Zone", "temperature_entity": "sensor.room", "period_entity": "input_select.period"})
         self.assertEqual(result["step_id"], "devices")
 

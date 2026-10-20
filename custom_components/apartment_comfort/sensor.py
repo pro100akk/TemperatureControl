@@ -9,7 +9,7 @@ from .entity import ComfortEntity
 FORECAST_STATUSES = ["disabled", "room_temperature_unavailable", "outdoor_temperature_unavailable",
                      "operating_state_unknown", "manual_hold", "window_open_or_unknown",
                      "disturbance_active_or_unknown", "learning", "model_error_high",
-                     "outdoor_conditions_changed", "ready"]
+                     "outdoor_conditions_changed", "ready", "estimated"]
 FAN_STATUSES = ["not_configured", "observation", "manual_hold", "no_heat_demand",
                 "surface_temperature_unavailable", "radiator_not_hot", "speed_limit_zero",
                 "pipe_temperature_unavailable", "radiator_not_heating",
@@ -86,6 +86,7 @@ class ComfortSensor(ComfortEntity, SensorEntity):
                     "thermal_model": c.engine.model.rates,
                     "issues": c.issues, "floor_locked": c.engine.floor_locked,
                     "manual_hold": c.manual_hold,
+                    "exhaust_holds": sorted(c.exhaust_holds),
                     "radiator_command": c.radiator_command,
                     "forecast_status": c.forecast_status, "fan_status": c.fan_status}
         if self.key in ("predicted_temperature", "forecast_status"):
@@ -94,6 +95,8 @@ class ComfortSensor(ComfortEntity, SensorEntity):
                     "samples": c.engine.model.rates.get(c.engine.model.current, {}).get("count", 0),
                     "required_samples": 12,
                     "regime": c.engine.model.current,
-                    "assumption": "unchanged_operating_state_and_outdoor_conditions",
+                    "assumption": "unchanged_devices_with_weather_temperature_delta",
+                    "weather_temperature_delta": c.inputs.weather_temperature_delta,
+                    "weather_condition": c.inputs.weather_condition,
                     "coefficients": c.engine.model.rates}
         return {"period": c.inputs.period, "temporary": c.override is not None}

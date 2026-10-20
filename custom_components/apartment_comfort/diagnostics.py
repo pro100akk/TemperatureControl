@@ -1,12 +1,13 @@
 """Download anonymous control diagnostics, without entity identifiers."""
 
 from dataclasses import asdict
+from .version import VERSION
 
 
 async def async_get_config_entry_diagnostics(hass, entry):
     c = entry.runtime_data
     return {
-        "version": "0.1.2", "mode": c.mode,
+        "version": VERSION, "mode": c.mode,
         "control_enabled": c.config["control_enabled"],
         "manual_hold": c.manual_hold,
         "controller": c.config["controller"],

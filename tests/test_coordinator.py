@@ -56,7 +56,7 @@ class Converter:
 
 
 module("homeassistant")
-module("homeassistant.core", callback=lambda f: f)
+module("homeassistant.core", callback=lambda f: f, Context=lambda: SimpleNamespace(id="integration-context"))
 module("homeassistant.exceptions", HomeAssistantError=FakeError)
 module("homeassistant.helpers")
 module("homeassistant.helpers.event", async_track_state_change_event=lambda *a: lambda: None,
@@ -189,8 +189,7 @@ class AdapterTests(unittest.TestCase):
     async def test_window_heating_is_excluded_from_closed_window_forecast(self):
         self.c.config["heat_with_window_open"] = True
         self.c.inputs.window = True
-        self.assertIsNone(self.c._thermal_regime())
-        self.assertEqual(self.c.regime_reason, "window_open_or_unknown")
+        self.assertIn("|w=True", self.c._thermal_regime())
 
     async def test_model_uses_actual_action_not_requested_mode(self):
         self.c.inputs = self.c._read()
@@ -200,7 +199,7 @@ class AdapterTests(unittest.TestCase):
         self.states["climate.rad"].attributes["hvac_action"] = "heating"
         self.assertEqual(self.c._thermal_regime(), "radiator")
         self.c.manual_hold = True
-        self.assertIsNone(self.c._thermal_regime())
+        self.assertEqual(self.c._thermal_regime(), "radiator")
 
     async def test_learned_model_survives_restart(self):
         for i in range(14):

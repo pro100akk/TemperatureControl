@@ -9,9 +9,14 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er, selector
 
-from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, PERIODS, SENSOR_FIELDS
+from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, PERIODS, SENSOR_FIELDS, EXHAUST_FIELDS
+from .ventilation import speed_curve
 
 POLICY_RANGES = {
+    "kitchen_airflow_percent": (1, 100, 1),
+    "kitchen_night_airflow_percent": (0, 100, 1),
+    "window_exchange_per_hour": (0, 3, 0.05),
+    "exhaust_exchange_per_hour": (0, 5, 0.05),
     "forecast_minutes": (5, 60, 5), "pid_kp": (0, 5, 0.01),
     "pid_ki": (0, 0.5, 0.001), "pid_kd": (0, 5, 0.01),
     "pid_max_offset": (0.5, 5, 0.1),
@@ -50,12 +55,14 @@ def schema_for(step, values):
                     selector.NumberSelector({"min": 16, "max": 28, "step": 0.1, "mode": "box", "unit_of_measurement": "°C"})
                 )
     if step == "policy":
+        fields[vol.Required("kitchen_speed_curve", default=values["kitchen_speed_curve"])] = selector.TextSelector()
         fields[vol.Required("fan_temperature_source", default=values["fan_temperature_source"])] = selector.SelectSelector(
             {"options": ["surface", "pipe"], "mode": "dropdown", "translation_key": "fan_temperature_source"})
         fields[vol.Required("controller", default=values["controller"])] = selector.SelectSelector(
             {"options": ["hysteresis", "pi", "pid"], "mode": "dropdown"})
         for key in ("control_enabled", "floor_enabled", "learning_enabled",
-                    "heat_with_window_open", "radiator_compensation"):
+                    "heat_with_window_open", "radiator_compensation",
+                    "kitchen_control_enabled", "shower_control_enabled", "kitchen_night_allowed"):
             fields[vol.Required(key, default=values[key])] = selector.BooleanSelector()
         for key, (low, high, increment) in POLICY_RANGES.items():
             fields[vol.Required(key, default=values[key])] = selector.NumberSelector(
@@ -87,8 +94,8 @@ class FlowMixin:
                     errors["base"] = "unique_periods"
                 else:
                     self._values.update({f"{p}_state": value for p, value in zip(PERIODS, states)})
-            if step == "devices":
-                ids = [user_input[k] for k in ACTUATOR_FIELDS if user_input.get(k)]
+            if step in ("user", "devices"):
+                ids = [self._values[k] for k in (*ACTUATOR_FIELDS, *EXHAUST_FIELDS) if self._values.get(k)]
                 if len(ids) != len(set(ids)):
                     errors["base"] = "duplicate_devices"
                 registry = er.async_get(self.hass)
@@ -98,9 +105,13 @@ class FlowMixin:
                     if isinstance(self, config_entries.OptionsFlow) and entry.entry_id == self.config_entry.entry_id:
                         continue
                     other = dict(entry.options or entry.data)
-                    if set(ids) & {other.get(k) for k in ACTUATOR_FIELDS}:
+                    if set(ids) & {other.get(k) for k in (*ACTUATOR_FIELDS, *EXHAUST_FIELDS)}:
                         errors["base"] = "device_in_use"
             if step == "policy":
+                try:
+                    speed_curve(self._values["kitchen_speed_curve"])
+                except (ValueError, TypeError):
+                    errors["base"] = "invalid_speed_curve"
                 if self._values["fan_temperature_source"] not in ("surface", "pipe"):
                     errors["base"] = "invalid_fan_source"
                 if self._values["controller"] not in ("hysteresis", "pi", "pid"):
