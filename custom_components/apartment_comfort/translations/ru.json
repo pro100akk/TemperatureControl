@@ -93,7 +93,15 @@
           "shower_high": "Высокая влажность душа (%)",
           "shower_clear": "Нормализация влажности душа (%)",
           "cooling_margin": "Разница для рекомендации охлаждения улицей (°C)",
-          "window_min_temperature": "Минимальная температура квартиры при проветривании (°C)"
+          "window_min_temperature": "Минимальная температура квартиры при проветривании (°C)",
+          "background_exchange_per_hour": "Фоновый теплообмен (1/ч)",
+          "shower_exchange_per_hour": "Теплообмен вытяжки душа (1/ч)",
+          "closed_window_exhaust_factor": "Доля влияния вытяжек при закрытом окне (0–1)",
+          "radiator_degrees_per_hour": "Вклад радиатора (°C/ч)",
+          "radiator_fan_degrees_per_hour": "Дополнительный вклад обдува радиатора (°C/ч)",
+          "floor_degrees_per_hour": "Вклад тёплого пола (°C/ч)",
+          "cooling_degrees_per_hour": "Вклад охлаждения кондиционером (°C/ч)",
+          "computer_degrees_per_kwh": "Тепловой вклад компьютера (°C/кВт·ч)"
         }
       }
     },
@@ -201,7 +209,15 @@
           "shower_high": "Высокая влажность душа (%)",
           "shower_clear": "Нормализация влажности душа (%)",
           "cooling_margin": "Разница для рекомендации охлаждения улицей (°C)",
-          "window_min_temperature": "Минимальная температура квартиры при проветривании (°C)"
+          "window_min_temperature": "Минимальная температура квартиры при проветривании (°C)",
+          "background_exchange_per_hour": "Фоновый теплообмен (1/ч)",
+          "shower_exchange_per_hour": "Теплообмен вытяжки душа (1/ч)",
+          "closed_window_exhaust_factor": "Доля влияния вытяжек при закрытом окне (0–1)",
+          "radiator_degrees_per_hour": "Вклад радиатора (°C/ч)",
+          "radiator_fan_degrees_per_hour": "Дополнительный вклад обдува радиатора (°C/ч)",
+          "floor_degrees_per_hour": "Вклад тёплого пола (°C/ч)",
+          "cooling_degrees_per_hour": "Вклад охлаждения кондиционером (°C/ч)",
+          "computer_degrees_per_kwh": "Тепловой вклад компьютера (°C/кВт·ч)"
         }
       },
       "init": {

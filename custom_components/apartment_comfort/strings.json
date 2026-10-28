@@ -93,7 +93,15 @@
           "shower_high": "Shower humidity high (%)",
           "shower_clear": "Shower humidity clear (%)",
           "cooling_margin": "Outdoor cooling recommendation margin (°C)",
-          "window_min_temperature": "Minimum room temperature while airing (°C)"
+          "window_min_temperature": "Minimum room temperature while airing (°C)",
+          "background_exchange_per_hour": "Background thermal exchange (1/h)",
+          "shower_exchange_per_hour": "Shower exhaust thermal exchange (1/h)",
+          "closed_window_exhaust_factor": "Exhaust effect with closed window (0–1)",
+          "radiator_degrees_per_hour": "Radiator heating rate (°C/h)",
+          "radiator_fan_degrees_per_hour": "Additional radiator fan heating (°C/h)",
+          "floor_degrees_per_hour": "Floor heating rate (°C/h)",
+          "cooling_degrees_per_hour": "AC cooling rate (°C/h)",
+          "computer_degrees_per_kwh": "Computer thermal gain (°C/kWh)"
         }
       }
     },
@@ -201,7 +209,15 @@
           "shower_high": "Shower humidity high (%)",
           "shower_clear": "Shower humidity clear (%)",
           "cooling_margin": "Outdoor cooling recommendation margin (°C)",
-          "window_min_temperature": "Minimum room temperature while airing (°C)"
+          "window_min_temperature": "Minimum room temperature while airing (°C)",
+          "background_exchange_per_hour": "Background thermal exchange (1/h)",
+          "shower_exchange_per_hour": "Shower exhaust thermal exchange (1/h)",
+          "closed_window_exhaust_factor": "Exhaust effect with closed window (0–1)",
+          "radiator_degrees_per_hour": "Radiator heating rate (°C/h)",
+          "radiator_fan_degrees_per_hour": "Additional radiator fan heating (°C/h)",
+          "floor_degrees_per_hour": "Floor heating rate (°C/h)",
+          "cooling_degrees_per_hour": "AC cooling rate (°C/h)",
+          "computer_degrees_per_kwh": "Computer thermal gain (°C/kWh)"
         }
       },
       "init": {

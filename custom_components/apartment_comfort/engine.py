@@ -24,6 +24,9 @@ class Inputs:
     pipe_temperature: float | None = None
     radiator_temperature: float | None = None
     radiator_heating: bool | None = None
+    radiator_fan: bool | None = None
+    floor_heating: bool | None = None
+    ac_cooling: bool | None = None
     room_humidity: float | None = None
     shower_humidity: float | None = None
     outdoor_humidity: float | None = None

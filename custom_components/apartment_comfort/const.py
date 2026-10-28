@@ -3,7 +3,20 @@
 DOMAIN = "apartment_comfort"
 PLATFORMS = ["climate", "sensor"]
 PERIODS = ("morning", "day", "evening", "pre_sleep", "night", "pre_wake")
+INFLUENCE_DEFAULTS = {
+    "background_exchange_per_hour": 0.05,
+    "window_exchange_per_hour": 0.3,
+    "exhaust_exchange_per_hour": 0.6,
+    "shower_exchange_per_hour": 0.18,
+    "closed_window_exhaust_factor": 0.0,
+    "radiator_degrees_per_hour": 1.0,
+    "radiator_fan_degrees_per_hour": 0.0,
+    "floor_degrees_per_hour": 0.5,
+    "cooling_degrees_per_hour": 1.5,
+    "computer_degrees_per_kwh": 0.0,
+}
 DEFAULTS = {
+    **INFLUENCE_DEFAULTS,
     "name": "Apartment Comfort",
     "morning_state": "morning", "day_state": "day", "evening_state": "evening",
     "pre_sleep_state": "pre_sleep", "night_state": "night", "pre_wake_state": "pre_wake",
@@ -26,7 +39,6 @@ DEFAULTS = {
     "kitchen_night_allowed": False, "kitchen_airflow_percent": 50,
     "kitchen_night_airflow_percent": 25,
     "kitchen_speed_curve": "0:0,25:10,50:35,75:65,100:100",
-    "window_exchange_per_hour": 0.3, "exhaust_exchange_per_hour": 0.6,
     "shower_high": 70, "shower_clear": 62,
     "cooling_margin": 1.0, "window_min_temperature": 18.0,
 }

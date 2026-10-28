@@ -90,12 +90,13 @@ class ThermalModel:
         if temperature is None or not isfinite(temperature):
             return None, "room_temperature_unavailable"
         hours = minutes / 60
-        exchange = 0.05
+        exchange = config["background_exchange_per_hour"]
         if data.window is True:
             exchange += config["window_exchange_per_hour"]
-            exchange += config["exhaust_exchange_per_hour"] * (
-                (data.kitchen_airflow or 0) / 100 + (0.3 if data.shower_exhaust else 0))
-        # With a closed window the shower contributes no direct outdoor exchange.
+        ventilation = config["exhaust_exchange_per_hour"] * (data.kitchen_airflow or 0) / 100
+        if data.shower_exhaust:
+            ventilation += config["shower_exchange_per_hour"]
+        exchange += ventilation * (1 if data.window is True else config["closed_window_exhaust_factor"])
         learned = self.forecast(temperature, outdoor, minutes) if config["learning_enabled"] else None
         if learned is not None:
             return round(learned + exchange * data.weather_temperature_delta * hours / 2, 2), "ready"
@@ -105,11 +106,15 @@ class ThermalModel:
         if rate is None:
             rate = exchange * (outdoor - temperature) if outdoor is not None else 0
             if data.radiator_heating:
-                rate += 1.0
-            if self.current and "floor" in self.current:
-                rate += 0.5
-            if self.current and "cooling" in self.current:
-                rate -= 1.5
+                rate += config["radiator_degrees_per_hour"]
+                if data.radiator_fan:
+                    rate += config["radiator_fan_degrees_per_hour"]
+            if data.floor_heating:
+                rate += config["floor_degrees_per_hour"]
+            if data.ac_cooling:
+                rate -= config["cooling_degrees_per_hour"]
+            if data.computer_power is not None:
+                rate += max(0, data.computer_power) / 1000 * config["computer_degrees_per_kwh"]
         rate += exchange * data.weather_temperature_delta / 2
         return round(temperature + max(-12, min(12, rate)) * hours, 2), "estimated"
 

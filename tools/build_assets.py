@@ -67,6 +67,16 @@ LABELS = {
     "cooling_margin": ("Outdoor cooling recommendation margin (°C)", "Разница для рекомендации охлаждения улицей (°C)"),
     "window_min_temperature": ("Minimum room temperature while airing (°C)", "Минимальная температура квартиры при проветривании (°C)"),
 }
+LABELS.update({
+    "background_exchange_per_hour": ("Background thermal exchange (1/h)", "Фоновый теплообмен (1/ч)"),
+    "shower_exchange_per_hour": ("Shower exhaust thermal exchange (1/h)", "Теплообмен вытяжки душа (1/ч)"),
+    "closed_window_exhaust_factor": ("Exhaust effect with closed window (0–1)", "Доля влияния вытяжек при закрытом окне (0–1)"),
+    "radiator_degrees_per_hour": ("Radiator heating rate (°C/h)", "Вклад радиатора (°C/ч)"),
+    "radiator_fan_degrees_per_hour": ("Additional radiator fan heating (°C/h)", "Дополнительный вклад обдува радиатора (°C/ч)"),
+    "floor_degrees_per_hour": ("Floor heating rate (°C/h)", "Вклад тёплого пола (°C/ч)"),
+    "cooling_degrees_per_hour": ("AC cooling rate (°C/h)", "Вклад охлаждения кондиционером (°C/ч)"),
+    "computer_degrees_per_kwh": ("Computer thermal gain (°C/kWh)", "Тепловой вклад компьютера (°C/кВт·ч)"),
+})
 for period, en, ru in (
     ("morning", "Morning", "Утро"), ("day", "Day", "День"),
     ("evening", "Evening", "Вечер"), ("pre_sleep", "Preparing for sleep", "Подготовка к ночи"),

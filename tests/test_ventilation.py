@@ -73,6 +73,47 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(engine.evaluate(data, 0).kitchen_airflow_percent, 25)
         self.assertEqual(engine.evaluate(data, 0, "off").kitchen_airflow_percent, 0)
 
+    def test_separate_shower_exchange_and_closed_window_factor(self):
+        model = ThermalModel()
+        data = Inputs(temperature=22, outdoor_temperature=12, shower_exhaust=True)
+        config = DEFAULTS | {"background_exchange_per_hour": 0,
+                             "shower_exchange_per_hour": 0.4,
+                             "closed_window_exhaust_factor": 0.5}
+        self.assertEqual(model.estimate(data, 60, config)[0], 20)
+        data.window = True
+        config["window_exchange_per_hour"] = 0
+        self.assertEqual(model.estimate(data, 60, config)[0], 18)
+
+    def test_configurable_heat_sources_and_fan_requires_heat(self):
+        model = ThermalModel()
+        data = Inputs(temperature=22, radiator_fan=True, computer_power=500)
+        config = DEFAULTS | {"radiator_degrees_per_hour": 2,
+                             "radiator_fan_degrees_per_hour": 0.4,
+                             "computer_degrees_per_kwh": 0.6}
+        self.assertEqual(model.estimate(data, 60, config)[0], 22.3)
+        data.radiator_heating = True
+        self.assertEqual(model.estimate(data, 60, config)[0], 24.7)
+
+    def test_learned_rate_does_not_double_count_manual_coefficients(self):
+        model = ThermalModel()
+        for i in range(14):
+            model.observe(20 + i / 12, 10, "radiator_fan", i * 300)
+        data = Inputs(temperature=22, outdoor_temperature=10, radiator_heating=True,
+                      radiator_fan=True, computer_power=1000)
+        config = DEFAULTS | {"radiator_degrees_per_hour": 6,
+                             "radiator_fan_degrees_per_hour": 6,
+                             "computer_degrees_per_kwh": 6}
+        self.assertEqual(model.estimate(data, 60, config), (23, "ready"))
+
+    def test_floor_and_cooling_estimates_with_learning_disabled(self):
+        model = ThermalModel()
+        config = DEFAULTS | {"learning_enabled": False, "floor_degrees_per_hour": 2,
+                             "cooling_degrees_per_hour": 3}
+        data = Inputs(temperature=22, floor_heating=True)
+        self.assertEqual(model.estimate(data, 60, config), (24, "estimated"))
+        data.floor_heating, data.ac_cooling = False, True
+        self.assertEqual(model.estimate(data, 60, config), (19, "estimated"))
+
 
 class VentilationAdapterTests(unittest.TestCase):
     setUp = adapter.AdapterTests.setUp
@@ -150,14 +191,15 @@ class VentilationAdapterTests(unittest.TestCase):
         self.c._check_exhaust_overrides()
         self.assertNotIn("fan.hood", self.c.exhaust_holds)
 
-    async def test_automation_event_holds_exhaust_without_global_pause(self):
+    async def test_automation_off_allows_restart_without_global_pause(self):
         self.c.config["shower_exhaust_entity"] = "switch.shower"
         self.c.owned.add("switch.shower")
         old, new = state("on"), state("off")
+        old.context = SimpleNamespace(id="own", parent_id=None, user_id=None)
         new.context = SimpleNamespace(id="external", parent_id="other-automation", user_id=None)
         self.hass.async_create_task = lambda coro: coro.close()
         self.c._changed(SimpleNamespace(data={"entity_id": "switch.shower", "old_state": old, "new_state": new}))
-        self.assertIn("switch.shower", self.c.exhaust_holds)
+        self.assertNotIn("switch.shower", self.c.exhaust_holds)
         self.assertFalse(self.c.manual_hold)
         self.assertNotIn("switch.shower", self.c.owned)
 
@@ -166,6 +208,7 @@ class VentilationAdapterTests(unittest.TestCase):
         self.c.owned.add("switch.shower")
         self.c.exhaust_contexts.append("own")
         old, new = state("off"), state("on")
+        old.context = SimpleNamespace(id="before", parent_id=None, user_id=None)
         new.context = SimpleNamespace(id="own", parent_id=None, user_id=None)
         self.hass.async_create_task = lambda coro: coro.close()
         self.c._changed(SimpleNamespace(data={"entity_id": "switch.shower", "old_state": old, "new_state": new}))
@@ -182,6 +225,56 @@ class VentilationAdapterTests(unittest.TestCase):
         self.assertIn("switch.shower", restored.exhaust_holds)
         await restored.async_resume_schedule()
         self.assertFalse(restored.exhaust_holds)
+
+    async def test_external_off_is_restarted_for_both_roles(self):
+        for key, entity in (("shower_exhaust_entity", "switch.shower"),
+                            ("kitchen_exhaust_entity", "switch.hood")):
+            self.c.config[key] = entity
+            self.states[entity] = state("off")
+            self.c.inputs.window, self.c.inputs.period = True, "day"
+            await self.c._exhaust(key, 100)
+            self.assertIn(entity, self.c.owned)
+            self.states[entity].state = "off"
+            self.c._check_exhaust_overrides()
+            await self.c._exhaust(key, 100)
+            self.assertEqual(self.states[entity].state, "on")
+            await self.c._exhaust(key, 0)
+            self.assertEqual(self.states[entity].state, "off")
+
+    async def test_external_on_context_releases_unchanged_output(self):
+        entity = "switch.shower"
+        self.c.config["shower_exhaust_entity"] = entity
+        self.c.owned.add(entity)
+        old, new = state("on"), state("on")
+        old.context = SimpleNamespace(id="own", parent_id=None, user_id=None)
+        new.context = SimpleNamespace(id="external", parent_id=None, user_id=None)
+        self.states[entity] = new
+        self.hass.async_create_task = lambda coro: coro.close()
+        self.c._changed(SimpleNamespace(data={"entity_id": entity, "old_state": old, "new_state": new}))
+        await self.c._exhaust("shower_exhaust_entity", 0)
+        await self.c.async_stop()
+        self.hass.services.async_call.assert_not_awaited()
+        self.assertNotIn(entity, self.c.owned)
+
+    async def test_legacy_hold_clears_when_off_and_requested(self):
+        self.c.config["shower_exhaust_entity"] = "switch.shower"
+        self.states["switch.shower"] = state("off")
+        self.c.exhaust_holds.add("switch.shower")
+        await self.c._exhaust("shower_exhaust_entity", 100)
+        self.assertEqual(self.states["switch.shower"].state, "on")
+        self.assertNotIn("switch.shower", self.c.exhaust_holds)
+
+    async def test_restart_does_not_stop_exhaust_with_unknown_offline_owner(self):
+        from custom_components.apartment_comfort.coordinator import ComfortCoordinator
+        self.entry.options = self.entry.data | {"shower_exhaust_entity": "switch.shower"}
+        self.states["switch.shower"] = state("on")
+        restored = ComfortCoordinator(self.hass, self.entry)
+        restored.store.data = {"owned": ["switch.shower"],
+                               "exhaust_expected": {"switch.shower": ["on", None, None]}}
+        await restored.async_initialize()
+        await restored.async_stop()
+        self.hass.services.async_call.assert_not_awaited()
+        self.assertNotIn("switch.shower", restored.owned)
 
 
 for name, test in list(vars(VentilationAdapterTests).items()):
