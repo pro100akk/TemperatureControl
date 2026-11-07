@@ -9,7 +9,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er, selector
 
-from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, PERIODS, SENSOR_FIELDS, EXHAUST_FIELDS
+from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, PERIODS, SENSOR_FIELDS, EXHAUST_FIELDS, entity_ids
 from .ventilation import speed_curve
 
 POLICY_RANGES = {
@@ -53,7 +53,9 @@ def schema_for(step, values):
             marker = vol.Required(key, description={"suggested_value": values.get(key)})
         else:
             marker = vol.Optional(key, description={"suggested_value": values.get(key)})
-        fields[marker] = selector.EntitySelector({"domain": domains})
+        if key == "radiator_fan_entity":
+            marker = vol.Optional(key, description={"suggested_value": entity_ids(values, (key,))})
+        fields[marker] = selector.EntitySelector({"domain": domains, **({"multiple": True} if key == "radiator_fan_entity" else {})})
     if step == "periods":
         for period in PERIODS:
             for suffix in ("state", "temperature"):
@@ -103,7 +105,7 @@ class FlowMixin:
                 else:
                     self._values.update({f"{p}_state": value for p, value in zip(PERIODS, states)})
             if step in ("user", "devices"):
-                ids = [self._values[k] for k in (*ACTUATOR_FIELDS, *EXHAUST_FIELDS) if self._values.get(k)]
+                ids = entity_ids(self._values, (*ACTUATOR_FIELDS, *EXHAUST_FIELDS))
                 if len(ids) != len(set(ids)):
                     errors["base"] = "duplicate_devices"
                 registry = er.async_get(self.hass)
@@ -113,7 +115,7 @@ class FlowMixin:
                     if isinstance(self, config_entries.OptionsFlow) and entry.entry_id == self.config_entry.entry_id:
                         continue
                     other = dict(entry.options or entry.data)
-                    if set(ids) & {other.get(k) for k in (*ACTUATOR_FIELDS, *EXHAUST_FIELDS)}:
+                    if set(ids) & set(entity_ids(other, (*ACTUATOR_FIELDS, *EXHAUST_FIELDS))):
                         errors["base"] = "device_in_use"
             if step == "policy":
                 try:

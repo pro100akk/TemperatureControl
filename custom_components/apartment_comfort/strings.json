@@ -31,7 +31,7 @@
         "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhaust control is optional; kitchen lights with brightness support use the calibrated dimmer curve.",
         "data": {
           "radiator_entity": "Radiator thermostat",
-          "radiator_fan_entity": "Radiator fan or relay (fan / switch / light)",
+          "radiator_fan_entity": "Radiator fans or relays (fan / switch / light)",
           "floor_entity": "Floor thermostat",
           "ac_entity": "Air conditioner"
         }
@@ -147,7 +147,7 @@
         "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhaust control is optional; kitchen lights with brightness support use the calibrated dimmer curve.",
         "data": {
           "radiator_entity": "Radiator thermostat",
-          "radiator_fan_entity": "Radiator fan or relay (fan / switch / light)",
+          "radiator_fan_entity": "Radiator fans or relays (fan / switch / light)",
           "floor_entity": "Floor thermostat",
           "ac_entity": "Air conditioner"
         }

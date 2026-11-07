@@ -60,6 +60,20 @@ class OptionsTests(unittest.TestCase):
         self.flow.config_entry = SimpleNamespace(entry_id="zone", data=self.original, options={})
         self.flow.hass = SimpleNamespace(config_entries=SimpleNamespace(async_entries=lambda domain: [self.flow.config_entry]))
 
+    async def test_multiple_fans_and_conflicts(self):
+        fans = ["fan.one", "switch.two", "light.three"]
+        result = await self.flow.async_step_devices({"radiator_fan_entity": fans})
+        self.assertEqual(result["data"]["radiator_fan_entity"], fans)
+        self.assertTrue(self.module.schema_for("devices", result["data"])["radiator_fan_entity"]["multiple"])
+        result = await self.flow.async_step_user({"kitchen_exhaust_entity": "switch.two"})
+        self.assertEqual(result["errors"], {"base": "duplicate_devices"})
+
+    async def test_multiple_fans_cannot_overlap_other_entries(self):
+        other = SimpleNamespace(entry_id="other", options={}, data={"radiator_fan_entity": ["fan.one", "fan.two"]})
+        self.flow.hass.config_entries.async_entries = lambda domain: [self.flow.config_entry, other]
+        result = await self.flow.async_step_devices({"radiator_fan_entity": ["fan.two", "fan.three"]})
+        self.assertEqual(result["errors"], {"base": "device_in_use"})
+
     async def test_menu_exposes_all_sections(self):
         result = await self.flow.async_step_init()
         self.assertEqual(result["type"], "menu")

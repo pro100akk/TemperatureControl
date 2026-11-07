@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
 
-from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, SENSOR_FIELDS, EXHAUST_FIELDS, INFLUENCE_DEFAULTS
+from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, SENSOR_FIELDS, EXHAUST_FIELDS, INFLUENCE_DEFAULTS, entity_ids
 from .engine import Engine, Inputs
 from .ventilation import speed_curve, interpolate
 
@@ -62,7 +62,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
         self.override = saved.get("override")
         self.override_period = saved.get("override_period")
         # Restore climate ownership; exhaust commands while offline cannot be attributed.
-        configured = {self.config.get(k) for k in (*ACTUATOR_FIELDS, *EXHAUST_FIELDS)}
+        configured = set(entity_ids(self.config, (*ACTUATOR_FIELDS, *EXHAUST_FIELDS)))
         exhaust_entities = {self.config.get(k) for k in EXHAUST_FIELDS}
         self.owned = (set(saved.get("owned", [])) & configured) - exhaust_entities
         self.exhaust_holds = set(saved.get("exhaust_holds", [])) & configured
@@ -98,7 +98,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
 
     @callback
     def start(self):
-        watched = [self.config[k] for k in (*SENSOR_FIELDS, *ACTUATOR_FIELDS) if self.config.get(k)]
+        watched = entity_ids(self.config, (*SENSOR_FIELDS, *ACTUATOR_FIELDS))
         self.unsubs.append(async_track_state_change_event(self.hass, watched, self._changed))
         self.unsubs.append(async_track_time_interval(self.hass, self.async_tick, timedelta(seconds=30)))
 
@@ -129,7 +129,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 and new.state == "off" and old.state != "off"):
             self.ac_stopped = monotonic()
         # User-originated physical edits suspend automatic management until resume.
-        if (new and event.data["entity_id"] in {self.config.get(k) for k in ACTUATOR_FIELDS}
+        if (new and event.data["entity_id"] in set(entity_ids(self.config, ACTUATOR_FIELDS))
                 and new.context.user_id is not None and new.context.parent_id is None):
             self.manual_hold = True
             self.owned.discard(event.data["entity_id"])
@@ -213,8 +213,8 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 data.weather_temperature_delta = v0 + (v1-v0)*(horizon-t0)/(t1-t0) - current
                 break
 
-    def _state(self, key, *, fresh=False):
-        entity_id = self.config.get(key)
+    def _state(self, key, *, fresh=False, entity_id=None):
+        entity_id = entity_id or self.config.get(key)
         if not entity_id:
             return None
         state = self.hass.states.get(entity_id)
@@ -293,7 +293,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
             radiator_heating=self._confirmed_action("radiator_entity", "heating"),
             floor_heating=self._confirmed_action("floor_entity", "heating"),
             ac_cooling=self._confirmed_action("ac_entity", "cooling"),
-            radiator_fan=self._bool("radiator_fan_entity", False),
+            radiator_fan=self._radiator_fan_state(),
             room_humidity=self._number("room_humidity_entity", "humidity"),
             shower_humidity=self._number("shower_humidity_entity", "humidity"),
             outdoor_humidity=self._number("outdoor_humidity_entity", "humidity"),
@@ -333,14 +333,15 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 self.override = None
             if self.manual_hold or not self.config["control_enabled"]:
                 self.engine.pid.reset()
-            self.decision = self.engine.evaluate(self.inputs, now, self.mode, self.override)
-            self.decision.predicted_temperature, self.estimate_status = self.engine.model.estimate(
+            predicted, self.estimate_status = self.engine.model.estimate(
                 self.inputs, self.config["forecast_minutes"], self.config)
+            self.decision = self.engine.evaluate(
+                self.inputs, now, self.mode, self.override, predicted_temperature=predicted)
             if self.config["control_enabled"] and not self.manual_hold:
                 read_issue_count = len(self.issues)
                 await self._apply()
-                await self._exhaust("kitchen_exhaust_entity", self.decision.kitchen_airflow_percent)
                 await self._exhaust("shower_exhaust_entity", 100 if self.decision.shower_requested else 0)
+                await self._exhaust("kitchen_exhaust_entity", self.decision.kitchen_airflow_percent)
                 if len(self.issues) > read_issue_count:
                     self.engine.pid.reset()
             elif not self.config["control_enabled"] and self.owned:
@@ -379,11 +380,15 @@ class ComfortCoordinator(DataUpdateCoordinator):
             active.append(regime)
         regime = "+".join(active) if active else "idle"
         if self.config.get("radiator_fan_entity"):
-            fan = self._state("radiator_fan_entity")
-            if fan is None or fan.state not in ("on", "off"):
+            fans = self._radiator_fan_state()
+            if fans is None:
                 return None
-            if fan.state == "on":
+            if fans:
                 regime += "_fan"
+            ids = entity_ids(self.config, ("radiator_fan_entity",))
+            if len(ids) > 1:
+                regime += "|fans=" + ",".join(
+                    entity for entity in ids if self.hass.states.get(entity).state == "on")
         if (self.inputs.window is not False or self.inputs.kitchen_exhaust
                 or self.inputs.shower_exhaust or self.inputs.cooking or self.inputs.weather_condition):
             regime += f"|w={self.inputs.window}|k={round((self.inputs.kitchen_airflow or 0)/10)}"
@@ -410,8 +415,8 @@ class ComfortCoordinator(DataUpdateCoordinator):
         if not self.decision:
             return "no_heat_demand"
         if self.decision.fan_percent:
-            state = self.hass.states.get(self.config["radiator_fan_entity"])
-            if state and state.state == "on":
+            states = [self.hass.states.get(entity) for entity in entity_ids(self.config, ("radiator_fan_entity",))]
+            if all(state and state.state == "on" for state in states):
                 return "on"
             return "waiting_or_blocked"
         return self.decision.fan_reason
@@ -538,14 +543,24 @@ class ComfortCoordinator(DataUpdateCoordinator):
             self.last_commands[entity_id] = (desired, monotonic())
         return success
 
+    def _radiator_fan_state(self):
+        states = [self._state("radiator_fan_entity", entity_id=entity)
+                  for entity in entity_ids(self.config, ("radiator_fan_entity",))]
+        if any(state is None or state.state not in ("on", "off") for state in states):
+            return None
+        return any(state.state == "on" for state in states)
+
     async def _fan(self, percent):
-        entity_id = self.config.get("radiator_fan_entity")
+        for entity in dict.fromkeys(entity_ids(self.config, ("radiator_fan_entity",))):
+            await self._fan_device(entity, percent)
+
+    async def _fan_device(self, entity_id, percent):
         if not entity_id:
             return
         if not percent:
             await self._off(entity_id)
             return
-        state = self._state("radiator_fan_entity")
+        state = self._state("radiator_fan_entity", entity_id=entity_id)
         if state is None:
             return
         if entity_id not in self.owned and state.state != "off":

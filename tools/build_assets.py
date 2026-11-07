@@ -42,7 +42,7 @@ LABELS = {
     "shower_exhaust_entity": ("Shower exhaust", "Вентилятор душа"),
     "kitchen_exhaust_entity": ("Kitchen exhaust / dimmer", "Кухонная вытяжка / диммер"),
     "radiator_entity": ("Radiator thermostat", "Термоголовка батареи"),
-    "radiator_fan_entity": ("Radiator fan or relay (fan / switch / light)", "Вентилятор батареи или реле (fan / switch / light)"),
+    "radiator_fan_entity": ("Radiator fans or relays (fan / switch / light)", "Вентиляторы батареи или реле (fan / switch / light)"),
     "floor_entity": ("Floor thermostat", "Термостат тёплого пола"),
     "ac_entity": ("Air conditioner", "Кондиционер"),
     "control_enabled": ("Enable appliance control (off = observe)", "Управлять приборами (выключено = наблюдать)"),

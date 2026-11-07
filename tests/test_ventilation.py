@@ -14,6 +14,34 @@ from custom_components.apartment_comfort.ventilation import speed_curve, interpo
 
 
 class ForecastTests(unittest.TestCase):
+    def test_gentle_stage_and_immediate_forecast_escalation(self):
+        engine = Engine({"shower_control_enabled": True, "kitchen_control_enabled": True})
+        data = Inputs(temperature=22.3, period="day", window=True, outdoor_temperature=5)
+        d = engine.evaluate(data, 0, predicted_temperature=22.1)
+        self.assertTrue(d.shower_requested)
+        self.assertEqual(d.recommendation, "keep_window_open")
+        self.assertEqual(d.kitchen_airflow_percent, 0)
+        d = engine.evaluate(data, 0, predicted_temperature=22.4)
+        self.assertTrue(d.shower_requested)
+        self.assertEqual(d.kitchen_airflow_percent, 50)
+        self.assertIn("free_cooling", d.ventilation_reasons)
+        data.temperature = 23.1
+        self.assertEqual(engine.evaluate(data, 0, predicted_temperature=22).kitchen_airflow_percent, 50)
+
+    def test_gentle_stage_preserves_guards_and_air_quality(self):
+        engine = Engine({"shower_control_enabled": True, "kitchen_control_enabled": True})
+        for changes in ({"window": False}, {"window": None}, {"outdoor_temperature": None},
+                        {"outdoor_temperature": 25}, {"temperature": None}, {"period": "unknown"}):
+            data = Inputs(**(dict(temperature=22.3, period="day", window=True, outdoor_temperature=5) | changes))
+            d = engine.evaluate(data, 0, predicted_temperature=24)
+            self.assertFalse(d.shower_requested)
+            self.assertEqual(d.kitchen_airflow_percent, 0)
+        data = Inputs(temperature=22.3, period="day", window=True, outdoor_temperature=5, co2=1400)
+        self.assertEqual(engine.evaluate(data, 0).kitchen_airflow_percent, 50)
+        self.assertFalse(engine.evaluate(data, 0, "off").shower_requested)
+        data.period, data.co2 = "night", 500
+        self.assertEqual(engine.evaluate(data, 0, predicted_temperature=24).kitchen_airflow_percent, 0)
+
     def test_open_window_and_exhaust_forecast(self):
         model = ThermalModel()
         data = Inputs(temperature=22, outdoor_temperature=5, window=True, kitchen_airflow=80)
@@ -118,6 +146,21 @@ class ForecastTests(unittest.TestCase):
 class VentilationAdapterTests(unittest.TestCase):
     setUp = adapter.AdapterTests.setUp
     apply_service = adapter.AdapterTests.apply_service
+
+    async def test_tick_uses_forecast_and_starts_shower_before_kitchen(self):
+        self.c.config.update(control_enabled=True, shower_control_enabled=True, kitchen_control_enabled=True,
+                             shower_exhaust_entity="switch.shower", kitchen_exhaust_entity="switch.hood",
+                             window_entity="binary_sensor.window", outdoor_temperature_entity="sensor.outside")
+        self.c.engine.config.update(self.c.config)
+        self.states.update({"switch.shower": state("off"), "switch.hood": state("off"),
+                            "binary_sensor.window": state("on"), "sensor.outside": state("5", unit_of_measurement="°C")})
+        self.states["sensor.room"].state = "22.3"
+        from unittest.mock import patch
+        with patch.object(self.c.engine.model, "estimate", return_value=(22.6, "estimated")):
+            await self.c.async_tick()
+        calls = [call.args[2]["entity_id"] for call in self.hass.services.async_call.call_args_list]
+        self.assertEqual(calls, ["switch.shower", "switch.hood"])
+        self.assertEqual(self.c.decision.predicted_temperature, 22.6)
 
     async def test_weather_priority_delta_and_fallback(self):
         self.c.config.update(weather_entity="weather.home", outdoor_temperature_entity="sensor.outside")

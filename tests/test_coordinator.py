@@ -76,6 +76,45 @@ def state(value, **attrs):
 
 
 class AdapterTests(unittest.TestCase):
+    async def test_three_fans_run_and_release_independently(self):
+        fans = ["fan.one", "switch.two", "light.three"]
+        self.c.config["radiator_fan_entity"] = fans
+        for entity in fans:
+            self.states[entity] = state("off")
+        await self.c._fan(40)
+        self.assertTrue(all(self.states[e].state == "on" for e in fans))
+        self.assertEqual(self.states["fan.one"].attributes["percentage"], 40)
+        self.assertTrue(set(fans) <= self.c.owned)
+        self.assertTrue(self.c._read().radiator_fan)
+        await self.c._fan(0)
+        self.assertTrue(all(self.states[e].state == "off" for e in fans))
+        self.assertFalse(self.c.owned)
+
+    async def test_unavailable_fan_does_not_block_other_fans(self):
+        self.c.config["radiator_fan_entity"] = ["fan.missing", "switch.good", "switch.external"]
+        self.states["switch.good"] = state("off")
+        self.states["switch.external"] = state("on")
+        await self.c._fan(40)
+        self.assertEqual(self.states["switch.good"].state, "on")
+        self.assertNotIn("switch.external", self.c.owned)
+        self.assertIsNone(self.c._read().radiator_fan)
+        await self.c._fan(0)
+        self.assertEqual(self.states["switch.good"].state, "off")
+        self.assertEqual(self.states["switch.external"].state, "on")
+
+    async def test_multiple_fan_ownership_restored_and_watched(self):
+        fans = ["switch.one", "switch.two"]
+        self.entry.options = self.entry.data | {"radiator_fan_entity": fans}
+        for entity in fans:
+            self.states[entity] = state("on")
+        restored = ComfortCoordinator(self.hass, self.entry)
+        restored.store.data = {"owned": fans}
+        await restored.async_initialize()
+        self.assertTrue(all(self.states[e].state == "off" for e in fans))
+        with patch("custom_components.apartment_comfort.coordinator.async_track_state_change_event") as track:
+            restored.start()
+            self.assertTrue(set(fans) <= set(track.call_args.args[1]))
+
     async def test_pipe_mode_starts_and_stops_relay_from_actual_heating(self):
         self.c.config.update(control_enabled=True, fan_temperature_source="pipe",
                              pipe_temperature_entity="sensor.pipe", radiator_fan_entity="light.fan")

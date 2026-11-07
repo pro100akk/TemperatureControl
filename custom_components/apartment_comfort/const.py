@@ -66,3 +66,13 @@ ACTUATOR_FIELDS = {
     "radiator_entity": ["climate"], "radiator_fan_entity": ["fan", "switch", "light"],
     "floor_entity": ["climate"], "ac_entity": ["climate"],
 }
+
+
+def entity_ids(config, fields):
+    """Flatten selections while accepting legacy single fan configurations."""
+    result = []
+    for key in fields:
+        value = config.get(key)
+        if value:
+            result.extend([value] if isinstance(value, str) else value)
+    return result

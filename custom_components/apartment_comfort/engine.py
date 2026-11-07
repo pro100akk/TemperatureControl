@@ -139,14 +139,35 @@ class Engine:
             decision.recommendation = "check_ventilation"
 
     def evaluate(self, data: Inputs, now: float, mode: str = "heat",
-                 override: float | None = None) -> Decision:
+                 override: float | None = None, *,
+                 predicted_temperature: float | None = None) -> Decision:
         c = self.config
         target = self.target(data.period, override)
-        d = Decision(target, "idle", "within_band")
+        d = Decision(target, "idle", "within_band", predicted_temperature=predicted_temperature)
         self._air(data, d)
         night = data.period in (c["night_state"], c["pre_sleep_state"], c["pre_wake_state"])
+        # Gentle cooling begins at the upper comfort edge; escalation has no timer.
+        cold_air = (data.temperature is not None and isfinite(data.temperature)
+                    and target is not None and data.outdoor_temperature is not None
+                    and isfinite(data.outdoor_temperature)
+                    and data.outdoor_temperature < target
+                    and data.outdoor_temperature < data.temperature - c["cooling_margin"])
+        upper_edge = target + c["deadband"] if target is not None else None
+        gentle_cooling = (cold_air and data.window is True
+                          and data.temperature > c["window_min_temperature"]
+                          and self.target(data.period, None) is not None
+                          and data.temperature >= upper_edge)
+        rising = (gentle_cooling and predicted_temperature is not None
+                  and isfinite(predicted_temperature)
+                  and predicted_temperature > data.temperature)
+        if mode != "off" and gentle_cooling and c["shower_control_enabled"]:
+            d.recommendation = "keep_window_open"
+        if mode != "off" and rising and "free_cooling" not in d.ventilation_reasons:
+            d.ventilation_reasons.append("free_cooling")
+            d.recommendation = "keep_window_open"
         if mode != "off":
             d.shower_requested = c["shower_control_enabled"] and data.shower_humidity is not None and self.air_flags["shower"]
+            d.shower_requested |= c["shower_control_enabled"] and gentle_cooling
             if (c["kitchen_control_enabled"] and data.window is True
                     and data.temperature is not None and data.temperature > c["window_min_temperature"]
                     and data.period is not None and self.target(data.period, None) is not None
