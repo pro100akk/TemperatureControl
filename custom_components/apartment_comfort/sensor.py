@@ -71,9 +71,11 @@ class ComfortSensor(ComfortEntity, SensorEntity):
             return {}
         if self.key == "fan_status":
             return {"requested_percent": c.decision.fan_percent,
+                    "devices": c.fan_details,
                     "temperature_source": c.config["fan_temperature_source"],
                     "pipe_temperature": c.inputs.pipe_temperature,
                     "radiator_heating": c.inputs.radiator_heating,
+                    "radiator_heat_source": c.radiator_heat_source,
                     "reason": c.decision.fan_reason,
                     "surface_temperature": c.inputs.radiator_temperature,
                     "required_temperature_above": (c.inputs.temperature + 2
@@ -88,6 +90,8 @@ class ComfortSensor(ComfortEntity, SensorEntity):
                     "manual_hold": c.manual_hold,
                     "exhaust_holds": sorted(c.exhaust_holds),
                     "radiator_command": c.radiator_command,
+                    "radiator_heat_source": c.radiator_heat_source,
+                    "pending_notifications": sorted(c.notifications.pending),
                     "forecast_status": c.forecast_status, "fan_status": c.fan_status}
         if self.key in ("predicted_temperature", "forecast_status"):
             return {"horizon_minutes": c.config["forecast_minutes"],

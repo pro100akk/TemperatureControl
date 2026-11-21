@@ -11,8 +11,10 @@ from homeassistant.helpers import entity_registry as er, selector
 
 from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, PERIODS, SENSOR_FIELDS, EXHAUST_FIELDS, entity_ids
 from .ventilation import speed_curve
+from .notifications import valid_notification_service
 
 POLICY_RANGES = {
+    "radiator_hot_delta": (0.5, 20, 0.1), "radiator_cold_delta": (0, 10, 0.1),
     "kitchen_airflow_percent": (1, 100, 1),
     "kitchen_night_airflow_percent": (0, 100, 1),
     "background_exchange_per_hour": (0, 3, 0.01),
@@ -38,9 +40,23 @@ POLICY_RANGES = {
     "cooling_margin": (0.5, 5, 0.1), "window_min_temperature": (12, 24, 0.5),
 }
 
+NOTIFICATION_RANGES = {
+    "notification_delay_minutes": (1, 120, 1),
+    "notification_repeat_minutes": (15, 1440, 1),
+    "notification_cold_outdoor": (-40, 20, 0.5),
+    "notification_cold_room": (5, 22, 0.5),
+}
+
 
 def schema_for(step, values):
     fields = {}
+    if step == "notifications":
+        for key in ("notifications_enabled", "notify_errors", "notify_heating_outage"):
+            fields[vol.Required(key, default=values[key])] = selector.BooleanSelector()
+        fields[vol.Required("notification_service", default=values["notification_service"])] = selector.TextSelector()
+        for key, (low, high, increment) in NOTIFICATION_RANGES.items():
+            fields[vol.Required(key, default=values[key])] = selector.NumberSelector(
+                {"min": low, "max": high, "step": increment, "mode": "box"})
     if step == "user":
         fields[vol.Required("name", default=values["name"])] = selector.TextSelector()
         entities = SENSOR_FIELDS
@@ -118,6 +134,8 @@ class FlowMixin:
                     if set(ids) & set(entity_ids(other, (*ACTUATOR_FIELDS, *EXHAUST_FIELDS))):
                         errors["base"] = "device_in_use"
             if step == "policy":
+                if self._values["radiator_cold_delta"] >= self._values["radiator_hot_delta"]:
+                    errors["base"] = "invalid_thresholds"
                 try:
                     speed_curve(self._values["kitchen_speed_curve"])
                 except (ValueError, TypeError):
@@ -129,10 +147,14 @@ class FlowMixin:
                 for high, clear in (("co2_high", "co2_clear"), ("humidity_high", "humidity_clear"), ("shower_high", "shower_clear")):
                     if user_input[clear] >= user_input[high]:
                         errors["base"] = "invalid_thresholds"
+            if step == "notifications":
+                self._values["notification_service"] = self._values["notification_service"].strip()
+                if self._values["notifications_enabled"] and not valid_notification_service(self._values["notification_service"]):
+                    errors["base"] = "invalid_notification_service"
             if not errors:
-                if isinstance(self, config_entries.OptionsFlow) or step == "policy":
+                if isinstance(self, config_entries.OptionsFlow) or step == "notifications":
                     return self.async_create_entry(title=self._values["name"], data=self._values)
-                next_step = {"user": "devices", "devices": "periods", "periods": "policy"}[step]
+                next_step = {"user": "devices", "devices": "periods", "periods": "policy", "policy": "notifications"}[step]
                 return await self._step(next_step, None)
         return self.async_show_form(step_id=step, data_schema=schema_for(step, self._values), errors=errors)
 
@@ -148,6 +170,9 @@ class FlowMixin:
     async def async_step_policy(self, user_input=None):
         return await self._step("policy", user_input)
 
+    async def async_step_notifications(self, user_input=None):
+        return await self._step("notifications", user_input)
+
 
 class ComfortConfigFlow(FlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -161,5 +186,5 @@ class ComfortConfigFlow(FlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
 class ComfortOptionsFlow(FlowMixin, config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
-            step_id="init", menu_options=["user", "devices", "periods", "policy"]
+            step_id="init", menu_options=["user", "devices", "periods", "policy", "notifications"]
         )

@@ -77,6 +77,18 @@ LABELS.update({
     "cooling_degrees_per_hour": ("AC cooling rate (°C/h)", "Вклад охлаждения кондиционером (°C/ч)"),
     "computer_degrees_per_kwh": ("Computer thermal gain (°C/kWh)", "Тепловой вклад компьютера (°C/кВт·ч)"),
 })
+LABELS.update({
+    'radiator_hot_delta': ('Radiator heating: difference above room temperature (°C)', 'Радиатор греет: превышение комнатной температуры (°C)'),
+    'radiator_cold_delta': ('Radiator cooled: difference above room temperature (°C)', 'Радиатор остыл: превышение комнатной температуры (°C)'),
+    'notifications_enabled': ('Enable notifications', 'Включить уведомления'),
+    'notification_service': ('Phone action (notify.mobile_app_...)', 'Действие телефона (notify.mobile_app_...)'),
+    'notify_errors': ('Control errors and low room temperature', 'Ошибки управления и низкая температура комнаты'),
+    'notify_heating_outage': ('Heating outage in cold weather', 'Отсутствие отопления в холодную погоду'),
+    'notification_delay_minutes': ('Problem confirmation delay (minutes)', 'Задержка подтверждения проблемы (мин)'),
+    'notification_repeat_minutes': ('Repeat interval (minutes)', 'Интервал повторных уведомлений (мин)'),
+    'notification_cold_outdoor': ('Cold outdoor threshold (°C)', 'Порог холода на улице (°C)'),
+    'notification_cold_room': ('Low room temperature threshold (°C)', 'Порог низкой температуры комнаты (°C)'),
+})
 for period, en, ru in (
     ("morning", "Morning", "Утро"), ("day", "Day", "День"),
     ("evening", "Evening", "Вечер"), ("pre_sleep", "Preparing for sleep", "Подготовка к ночи"),
@@ -87,6 +99,7 @@ for period, en, ru in (
     LABELS[f"{period}_temperature"] = (f"{en}: target temperature", f"{ru}: целевая температура")
 
 ERRORS = {
+    "invalid_notification_service": ("Enter notify.mobile_app_<phone_name>.", "Укажите действие notify.mobile_app_<имя_телефона>."),
     "invalid_speed_curve": ("Use strictly increasing command:airflow pairs from 0:0 to 100:100.", "Укажите возрастающие пары команда:воздухообмен от 0:0 до 100:100."),
     "invalid_fan_source": ("Select surface or pipe.", "Выберите поверхность батареи или трубу."),
     "invalid_controller": ("Select hysteresis, pi or pid.", "Выберите hysteresis, pi или pid."),
@@ -150,23 +163,25 @@ def build_translations():
         "radiator_entity", "radiator_fan_entity", "floor_entity", "ac_entity")]
     devices = ["radiator_entity", "radiator_fan_entity", "floor_entity", "ac_entity"]
     periods = [k for k in LABELS if k.endswith("_state") or k.endswith("_temperature") and k != "window_min_temperature"]
-    policy = [k for k in LABELS if k not in sensors + devices + periods + ["name"]]
+    notifications = [k for k in LABELS if k.startswith(("notification", "notify_"))]
+    policy = [k for k in LABELS if k not in sensors + devices + periods + notifications + ["name"]]
     titles = [("Sensors and existing day periods", "Датчики и существующие периоды дня"),
               ("Appliances", "Приборы"), ("Period mapping and temperatures", "Периоды и температуры"),
-              ("Control and ventilation limits", "Управление и пороги проветривания")]
+              ("Control and ventilation limits", "Управление и пороги проветривания"),
+              ("Phone notifications", "Уведомления на телефон")]
     descriptions = [
         ("Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
          "Выберите существующие сущности HA. Обязательны только название, основная температура и период дня. Для готовки нужен бинарный датчик/помощник; числовую мощность плиты предварительно преобразуйте в шаблонный бинарный датчик."),
-        ("Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhaust control is optional; kitchen lights with brightness support use the calibrated dimmer curve.",
-         "Климатические приборы должны поддерживать heat/cool и off. Для обдува по умолчанию нужен датчик поверхности батареи; в настройках управления можно выбрать датчик трубы вместе с подтверждённым нагревом термоголовки. Реле switch/light: положительный запрос скорости означает полное включение, 0 — выключение. Снизить ночную скорость реле не может. Управление вытяжками включается отдельно; для диммера используется калибровочная кривая."),
+        ('Radiators support heat/off or heat only with min_temp; floor thermostats require heat/off and AC cool/off. A selected radiator surface sensor determines heat output instead of hvac_action. Fan relays support on/off only.', 'Радиатор поддерживает heat/off или только heat с min_temp; пол — heat/off, кондиционер — cool/off. Выбранный датчик поверхности батареи определяет её теплоотдачу вместо hvac_action. Реле обдува поддерживают только включение и выключение.'),
         ("Copy the exact states from Developer Tools → States, not translated display labels. Existing alarm and day-period automations remain authoritative.",
          "Скопируйте точные состояния из Инструменты разработчика → Состояния, а не отображаемые переводы. Переходами по будильнику и времени управляют ваши существующие автоматизации."),
         ("Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
          "Управление по умолчанию отключено. Перед включением выключите выбранные приборы и отключите конфликтующие климатические автоматизации. Пороги — настраиваемые начальные значения, а не гарантия качества воздуха."),
+        ('Disabled by default. Copy the HA mobile app action from Developer Tools → Actions. Problems must persist for the full delay. Confirmed heating outages require an availability sensor; suspected outages require pipe and surface sensors. Fan state does not prove physical rotation.', 'По умолчанию выключены. Укажите действие мобильного приложения HA из Инструменты разработчика → Действия. Проблема должна сохраняться всю заданную задержку. Подтверждённое отключение отопления требует датчика доступности; предположение — датчиков трубы и поверхности. Уведомления не проверяют физическое вращение вентилятора.'),
     ]
     for language, index in (("en", 0), ("ru", 1)):
         steps = {}
-        for n, (step, keys) in enumerate((("user", ["name"] + sensors), ("devices", devices), ("periods", periods), ("policy", policy))):
+        for n, (step, keys) in enumerate((("user", ["name"] + sensors), ("devices", devices), ("periods", periods), ("policy", policy), ("notifications", notifications))):
             steps[step] = {"title": titles[n][index], "description": descriptions[n][index],
                            "data": {k: LABELS[k][index] for k in keys}}
         section = {"step": steps, "error": {k: v[index] for k, v in ERRORS.items()}}
@@ -180,6 +195,7 @@ def build_translations():
                 "devices": ("Appliances and relays", "Приборы и реле")[index],
                 "periods": ("Periods and target temperatures", "Периоды и целевые температуры")[index],
                 "policy": ("Control and ventilation thresholds", "Управление и пороги проветривания")[index],
+                "notifications": ("Phone notifications", "Уведомления на телефон")[index],
             },
         }
         data = {

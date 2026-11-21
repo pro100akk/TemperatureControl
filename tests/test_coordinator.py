@@ -76,6 +76,112 @@ def state(value, **attrs):
 
 
 class AdapterTests(unittest.TestCase):
+    def temperature_only_radiator(self, **attrs):
+        self.states["climate.rad"] = state(
+            "heat", hvac_modes=["heat"], min_temp=5, max_temp=30,
+            **({"temperature": 22} | attrs))
+        self.c.config["control_enabled"] = True
+
+    async def test_temperature_only_claims_matching_target_and_stops_at_minimum(self):
+        self.temperature_only_radiator()
+        await self.c.async_tick()
+        self.assertIn("climate.rad", self.c.owned)
+        await self.c.async_set_mode("off")
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 5)
+        self.assertNotIn("climate.rad", self.c.owned)
+        self.hass.services.async_call.assert_awaited_once_with(
+            "climate", "set_temperature", {"entity_id": "climate.rad", "temperature": 5.0}, blocking=True)
+
+    async def test_temperature_only_initial_no_demand_sets_minimum(self):
+        self.temperature_only_radiator(temperature=28)
+        self.states["sensor.room"].state = "24"
+        await self.c.async_tick()
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 5)
+        await self.c.async_tick()
+        self.assertEqual(self.hass.services.async_call.await_count, 1)
+
+    async def test_temperature_only_shutdown_and_sensor_failure(self):
+        for stop in (False, True):
+            self.setUp()
+            self.temperature_only_radiator(temperature=18)
+            await self.c.async_tick()
+            self.assertEqual(self.states["climate.rad"].attributes["temperature"], 22)
+            if stop:
+                self.assertTrue(await self.c.async_stop())
+            else:
+                self.states["sensor.room"].state = "unavailable"
+                await self.c.async_tick()
+            self.assertEqual(self.states["climate.rad"].attributes["temperature"], 5)
+
+    async def test_temperature_only_requires_confirmed_setpoint_and_retries(self):
+        self.temperature_only_radiator()
+        self.c.owned.add("climate.rad")
+        self.hass.services.async_call.side_effect = None
+        self.assertFalse(await self.c._off("climate.rad"))
+        self.assertFalse(await self.c._off("climate.rad"))
+        self.assertEqual(self.hass.services.async_call.await_count, 1)
+        self.assertIn("climate.rad", self.c.owned)
+        self.c.last_commands["climate.rad"] = (("heat", 5), -100)
+        self.hass.services.async_call.side_effect = self.apply_service
+        self.assertTrue(await self.c._off("climate.rad"))
+
+    async def test_temperature_only_invalid_minimum_blocks_heating(self):
+        for minimum in (None, "invalid", float("nan"), float("inf")):
+            self.temperature_only_radiator()
+            self.states["climate.rad"].attributes["min_temp"] = minimum
+            self.assertFalse(await self.c._climate("radiator_entity", True, "heat", 22))
+        self.hass.services.async_call.assert_not_awaited()
+
+    async def test_temperature_only_cooling_requires_idle_feedback(self):
+        for action in (None, "heating", "idle"):
+            self.setUp()
+            self.temperature_only_radiator(hvac_action=action)
+            self.c.mode = "cool"
+            self.c.ac_stopped = -100000
+            self.states["sensor.room"].state = "27"
+            await self.c.async_tick()
+            self.assertEqual(self.states["climate.rad"].attributes["temperature"], 5)
+            self.assertEqual(self.states["climate.ac"].state, "cool" if action == "idle" else "off")
+
+    async def test_temperature_only_native_minimum_and_manual_hold(self):
+        self.temperature_only_radiator()
+        self.hass.config.units.temperature_unit = "°F"
+        self.states["climate.rad"].attributes["min_temp"] = 41
+        self.c.mode = "off"
+        self.c.manual_hold = True
+        await self.c.async_tick()
+        self.hass.services.async_call.assert_not_awaited()
+        self.c.manual_hold = False
+        await self.c.async_tick()
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 41)
+        self.assertEqual(self.c.radiator_command["setpoint"], 5)
+
+    async def test_running_external_groups_report_blocked_then_transfer_when_off(self):
+        from custom_components.apartment_comfort.engine import Decision
+        from custom_components.apartment_comfort.diagnostics import async_get_config_entry_diagnostics
+        fans = ["fan.group_a", "fan.group_b"]
+        self.c.config.update(control_enabled=True, radiator_fan_entity=fans)
+        self.c.decision = Decision(25.3, "heating", "radiator_priority", fan_percent=30)
+        for entity in fans:
+            self.states[entity] = state("on", percentage=70)
+        await self.c._fan(30)
+        self.assertEqual(len(self.c.issues), 2)
+        self.assertEqual(self.c.fan_status, "waiting_or_blocked")
+        self.hass.services.async_call.assert_not_awaited()
+        self.entry.runtime_data = self.c
+        self.c.engine.model.rates["radiator_fan|fans=" + ",".join(fans)] = {"count": 1}
+        report = await async_get_config_entry_diagnostics(self.hass, self.entry)
+        self.assertEqual(len(report["issues"]), 2)
+        self.assertTrue(all(row["externally_active"] for row in report["radiator_fans"]))
+        self.assertEqual(report["radiator_fans"][0]["percentage"], 70)
+        self.assertNotIn("fan.group_a", str(report))
+        for entity in fans:
+            self.states[entity].state = "off"
+        await self.c._fan(30)
+        self.assertEqual(self.c.fan_status, "on")
+        self.assertTrue(all(self.states[e].attributes["percentage"] == 30 for e in fans))
+        self.assertTrue(set(fans) <= self.c.owned)
+
     async def test_three_fans_run_and_release_independently(self):
         fans = ["fan.one", "switch.two", "light.three"]
         self.c.config["radiator_fan_entity"] = fans

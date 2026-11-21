@@ -18,6 +18,7 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, SENSOR_FIELDS, EXHAUST_FIELDS, INFLUENCE_DEFAULTS, entity_ids
 from .engine import Engine, Inputs
 from .ventilation import speed_curve, interpolate
+from .notifications import ComfortNotifications
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ class ComfortCoordinator(DataUpdateCoordinator):
         self.issues = []
         self.regime_reason = "operating_state_unknown"
         self.radiator_command = {}
+        self.radiator_heat_state = None
+        self.notifications = ComfortNotifications(self)
         self.manual_hold = False
         self.stopping = False
         self.exhaust_holds = set()
@@ -54,6 +57,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
 
     async def async_initialize(self):
         saved = await self.store.async_load() or {}
+        self.notifications.restore(saved.get("notifications", {}))
         if saved.get("model_sources") == self._model_sources():
             self.engine.model.restore(saved.get("thermal_model"))
         self.mode = saved.get("mode", "heat")
@@ -77,6 +81,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
     def _snapshot(self):
         return {
             "model_sources": self._model_sources(),
+            "notifications": self.notifications.snapshot(),
             "thermal_model": {key: dict(value) for key, value in self.engine.model.rates.items()},
             "mode": self.mode, "override": self.override,
             "override_period": self.override_period, "owned": sorted(self.owned),
@@ -91,7 +96,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
         """Changing sensors/appliances invalidates coefficients from the old room setup."""
         return {key: self.config.get(key) for key in (
             *SENSOR_FIELDS, *ACTUATOR_FIELDS, "kitchen_speed_curve",
-            *INFLUENCE_DEFAULTS)}
+            *INFLUENCE_DEFAULTS, "radiator_hot_delta", "radiator_cold_delta")}
 
     def _save(self):
         self.store.async_delay_save(self._snapshot, 1)
@@ -290,7 +295,6 @@ class ComfortCoordinator(DataUpdateCoordinator):
             outdoor_temperature=self._number("outdoor_temperature_entity", "temperature"),
             pipe_temperature=self._number("pipe_temperature_entity", "temperature"),
             radiator_temperature=self._number("radiator_temperature_entity", "temperature"),
-            radiator_heating=self._confirmed_action("radiator_entity", "heating"),
             floor_heating=self._confirmed_action("floor_entity", "heating"),
             ac_cooling=self._confirmed_action("ac_entity", "cooling"),
             radiator_fan=self._radiator_fan_state(),
@@ -302,6 +306,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
             shower_exhaust=self._bool("shower_exhaust_entity"),
             kitchen_exhaust=self._bool("kitchen_exhaust_entity"),
         )
+        data.radiator_heating = self._radiator_heating(data)
         exhaust = self._state("kitchen_exhaust_entity")
         if exhaust and exhaust.state == "off":
             data.kitchen_airflow = 0
@@ -315,6 +320,24 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 data.kitchen_airflow = None
         self._weather_inputs(data)
         return data
+
+    @property
+    def radiator_heat_source(self):
+        return "surface" if self.config.get("radiator_temperature_entity") else "hvac_action"
+
+    def _radiator_heating(self, data):
+        """Estimate heat output, including residual heat after the valve closes."""
+        if self.radiator_heat_source == "hvac_action":
+            return self._confirmed_action("radiator_entity", "heating")
+        if data.radiator_temperature is None or data.temperature is None:
+            self.radiator_heat_state = None
+        else:
+            delta = data.radiator_temperature - data.temperature
+            if delta >= self.config["radiator_hot_delta"]:
+                self.radiator_heat_state = True
+            elif delta <= self.config["radiator_cold_delta"]:
+                self.radiator_heat_state = False
+        return self.radiator_heat_state
 
     async def async_tick(self, _now=None):
         async with self.lock:
@@ -346,6 +369,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
                     self.engine.pid.reset()
             elif not self.config["control_enabled"] and self.owned:
                 await self._release_all()
+            await self.notifications.async_update(now)
             self._save()
             self.async_set_updated_data(asdict(self.decision))
 
@@ -364,6 +388,12 @@ class ComfortCoordinator(DataUpdateCoordinator):
                                     ("floor_entity", "floor", "heating"),
                                     ("ac_entity", "cooling", "cooling")):
             if not self.config.get(key):
+                continue
+            if key == "radiator_entity" and self.radiator_heat_source == "surface":
+                if self.inputs.radiator_heating is None:
+                    return None
+                if self.inputs.radiator_heating:
+                    active.append(regime)
                 continue
             # Switch-like states need not report periodically. An unchanged off
             # or idle state is not a stale numeric temperature measurement.
@@ -415,11 +445,27 @@ class ComfortCoordinator(DataUpdateCoordinator):
         if not self.decision:
             return "no_heat_demand"
         if self.decision.fan_percent:
-            states = [self.hass.states.get(entity) for entity in entity_ids(self.config, ("radiator_fan_entity",))]
-            if all(state and state.state == "on" for state in states):
+            fans = self.fan_details
+            if all(fan["owned"] and fan["state"] == "on" for fan in fans):
                 return "on"
             return "waiting_or_blocked"
         return self.decision.fan_reason
+
+    @property
+    def fan_details(self):
+        """Report actual state separately from the controller's requested output."""
+        result = []
+        for index, entity in enumerate(entity_ids(self.config, ("radiator_fan_entity",)), 1):
+            state = self.hass.states.get(entity)
+            owned = entity in self.owned
+            result.append({
+                "index": index,
+                "state": state.state if state else "unavailable",
+                "percentage": state.attributes.get("percentage") if state else None,
+                "owned": owned,
+                "externally_active": bool(state and state.state == "on" and not owned),
+            })
+        return result
 
     async def _call(self, entity_id, service, data=None):
         try:
@@ -437,10 +483,47 @@ class ComfortCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Command %s failed for %s: %s", service, entity_id, err)
             return False
 
+    def _temperature_only_radiator(self, entity_id, state):
+        return (entity_id == self.config.get("radiator_entity") and state is not None
+                and state.attributes.get("hvac_modes") == ["heat"])
+
+    @staticmethod
+    def _minimum_setpoint(state):
+        """Use the device's native minimum, never guess a shutdown temperature."""
+        try:
+            minimum = float(state.attributes["min_temp"])
+            return minimum if isfinite(minimum) else None
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    async def _radiator_standby(self, entity_id, state):
+        minimum = self._minimum_setpoint(state)
+        if minimum is None or state.state != "heat":
+            self.issues.append(f"{entity_id}: standby requires heat state and valid min_temp")
+            return False
+        desired = ("heat", minimum)
+        if state.attributes.get("temperature") != minimum:
+            last, sent_at = self.last_commands.get(entity_id, (None, 0))
+            if last != desired or monotonic() - sent_at >= 60:
+                if await self._call(entity_id, "set_temperature", {"temperature": minimum}):
+                    self.last_commands[entity_id] = (desired, monotonic())
+            state = self.hass.states.get(entity_id)
+            if state is None or state.attributes.get("temperature") != minimum:
+                self.issues.append(f"{entity_id}: waiting for minimum setpoint confirmation")
+                return False
+        self.radiator_command = {"standby": True,
+                                 "setpoint": TemperatureConverter.convert(
+                                     minimum, self.hass.config.units.temperature_unit, "°C")}
+        self.owned.discard(entity_id)
+        self.last_commands.pop(entity_id, None)
+        return True
+
     async def _off(self, entity_id):
         if entity_id not in self.owned:
             return True
         state = self.hass.states.get(entity_id)
+        if self._temperature_only_radiator(entity_id, state):
+            return await self._radiator_standby(entity_id, state)
         success = state is not None and state.state == "off"
         if not success:
             last, sent_at = self.last_commands.get(entity_id, (None, 0))
@@ -477,11 +560,15 @@ class ComfortCoordinator(DataUpdateCoordinator):
         state = self._state(key)
         if state is None:
             return False
-        if mode not in state.attributes.get("hvac_modes", []) or "off" not in state.attributes.get("hvac_modes", []):
+        temperature_only = self._temperature_only_radiator(entity_id, state)
+        if temperature_only and (self._minimum_setpoint(state) is None or state.state != "heat"):
+            self.issues.append(f"{key}: requires heat state and valid min_temp")
+            return False
+        if mode not in state.attributes.get("hvac_modes", []) or (not temperature_only and "off" not in state.attributes.get("hvac_modes", [])):
             self.issues.append(f"{key}: requires {mode} and off modes")
             return False
         # Do not seize an already running external appliance on first contact.
-        if entity_id not in self.owned and state.state != "off":
+        if entity_id not in self.owned and state.state != "off" and not temperature_only:
             self.issues.append(f"{key}: externally active; turn off before transferring control")
             return False
         if key == "ac_entity" and entity_id not in self.owned:
@@ -528,6 +615,10 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 self.issues.append("radiator_entity: setpoint limit prevents heat demand")
         desired = (mode, native)
         current = (state.state, state.attributes.get("temperature"))
+        if temperature_only and entity_id not in self.owned:
+            # This device is always in heat mode; selecting it transfers setpoint control.
+            self.owned.add(entity_id)
+            await self._persist()
         if desired == current:
             return True
         if (self.last_commands.get(entity_id, (None, 0))[0] == desired
@@ -588,6 +679,11 @@ class ComfortCoordinator(DataUpdateCoordinator):
         released = True
         for key, enabled in wanted.items():
             if not enabled and self.config.get(key):
+                entity_id = self.config[key]
+                state = self.hass.states.get(entity_id)
+                if self._temperature_only_radiator(entity_id, state) and entity_id not in self.owned:
+                    self.owned.add(entity_id)
+                    await self._persist()
                 released = await self._off(self.config[key]) and released
         if not released:
             self.issues.append("interlock: failed to stop an appliance")
@@ -598,7 +694,15 @@ class ComfortCoordinator(DataUpdateCoordinator):
         for key in opposite:
             if (d.cooling or d.radiator or d.floor) and self.config.get(key):
                 state = self.hass.states.get(self.config[key])
-                if state is None or state.state != "off":
+                standby = (self._temperature_only_radiator(self.config[key], state)
+                           and state.state == "heat"
+                           and self._minimum_setpoint(state) is not None
+                           and state.attributes.get("temperature") == self._minimum_setpoint(state)
+                           and self.inputs.radiator_heating is False)
+                surface_hot_or_unknown = (key == "radiator_entity"
+                                          and self.radiator_heat_source == "surface"
+                                          and self.inputs.radiator_heating is not False)
+                if state is None or surface_hot_or_unknown or (state.state != "off" and not standby):
                     self.issues.append(f"interlock: {key} not confirmed off")
                     await self._fan(0)
                     return

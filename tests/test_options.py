@@ -77,7 +77,18 @@ class OptionsTests(unittest.TestCase):
     async def test_menu_exposes_all_sections(self):
         result = await self.flow.async_step_init()
         self.assertEqual(result["type"], "menu")
-        self.assertEqual(result["menu_options"], ["user", "devices", "periods", "policy"])
+        self.assertEqual(result["menu_options"], ["user", "devices", "periods", "policy", "notifications"])
+
+    async def test_notification_settings_are_separate_and_validate_destination(self):
+        result = await self.flow.async_step_notifications({"notifications_enabled": True, "notification_service": "notify.all"})
+        self.assertEqual(result["errors"], {"base": "invalid_notification_service"})
+        result = await self.flow.async_step_notifications({"notifications_enabled": True, "notification_service": "notify.mobile_app_phone"})
+        self.assertTrue(result["data"]["notifications_enabled"])
+        self.assertEqual(result["data"]["radiator_entity"], "climate.rad")
+
+    async def test_surface_thresholds_must_have_hysteresis(self):
+        result = await self.flow.async_step_policy(DEFAULTS | {"radiator_cold_delta": 3})
+        self.assertEqual(result["errors"], {"base": "invalid_thresholds"})
 
     async def test_device_section_saves_relay_and_preserves_other_sections(self):
         result = await self.flow.async_step_devices({"radiator_fan_entity": "light.ventiliator"})

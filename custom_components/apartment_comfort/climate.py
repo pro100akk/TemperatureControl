@@ -51,12 +51,14 @@ class ComfortClimate(ComfortEntity, ClimateEntity):
             return HVACAction.IDLE
         actions = []
         for entity_id in c.owned:
+            if entity_id == c.config.get("radiator_entity"):
+                continue
             state = c.hass.states.get(entity_id)
             if state:
                 actions.append(state.attributes.get("hvac_action"))
         if "cooling" in actions:
             return HVACAction.COOLING
-        if "heating" in actions:
+        if "heating" in actions or c.inputs.radiator_heating is True:
             return HVACAction.HEATING
         return HVACAction.IDLE
 
@@ -71,7 +73,9 @@ class ComfortClimate(ComfortEntity, ClimateEntity):
                 "period": c.inputs.period, "planned_action": c.decision.status if c.decision else None,
                 "reason": c.decision.reason if c.decision else None,
                 "issues": c.issues, "owned_devices": sorted(c.owned),
-                "radiator_command": c.radiator_command}
+                "radiator_command": c.radiator_command,
+                "radiator_heating": c.inputs.radiator_heating,
+                "radiator_heat_source": c.radiator_heat_source}
 
     async def async_set_hvac_mode(self, hvac_mode):
         if hvac_mode not in self.hvac_modes:

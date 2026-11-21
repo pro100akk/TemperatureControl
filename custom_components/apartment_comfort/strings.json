@@ -28,7 +28,7 @@
       },
       "devices": {
         "title": "Appliances",
-        "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhaust control is optional; kitchen lights with brightness support use the calibrated dimmer curve.",
+        "description": "Radiators support heat/off or heat only with min_temp; floor thermostats require heat/off and AC cool/off. A selected radiator surface sensor determines heat output instead of hvac_action. Fan relays support on/off only.",
         "data": {
           "radiator_entity": "Radiator thermostat",
           "radiator_fan_entity": "Radiator fans or relays (fan / switch / light)",
@@ -101,11 +101,28 @@
           "radiator_fan_degrees_per_hour": "Additional radiator fan heating (°C/h)",
           "floor_degrees_per_hour": "Floor heating rate (°C/h)",
           "cooling_degrees_per_hour": "AC cooling rate (°C/h)",
-          "computer_degrees_per_kwh": "Computer thermal gain (°C/kWh)"
+          "computer_degrees_per_kwh": "Computer thermal gain (°C/kWh)",
+          "radiator_hot_delta": "Radiator heating: difference above room temperature (°C)",
+          "radiator_cold_delta": "Radiator cooled: difference above room temperature (°C)"
+        }
+      },
+      "notifications": {
+        "title": "Phone notifications",
+        "description": "Disabled by default. Copy the HA mobile app action from Developer Tools → Actions. Problems must persist for the full delay. Confirmed heating outages require an availability sensor; suspected outages require pipe and surface sensors. Fan state does not prove physical rotation.",
+        "data": {
+          "notifications_enabled": "Enable notifications",
+          "notification_service": "Phone action (notify.mobile_app_...)",
+          "notify_errors": "Control errors and low room temperature",
+          "notify_heating_outage": "Heating outage in cold weather",
+          "notification_delay_minutes": "Problem confirmation delay (minutes)",
+          "notification_repeat_minutes": "Repeat interval (minutes)",
+          "notification_cold_outdoor": "Cold outdoor threshold (°C)",
+          "notification_cold_room": "Low room temperature threshold (°C)"
         }
       }
     },
     "error": {
+      "invalid_notification_service": "Enter notify.mobile_app_<phone_name>.",
       "invalid_speed_curve": "Use strictly increasing command:airflow pairs from 0:0 to 100:100.",
       "invalid_fan_source": "Select surface or pipe.",
       "invalid_controller": "Select hysteresis, pi or pid.",
@@ -144,7 +161,7 @@
       },
       "devices": {
         "title": "Appliances",
-        "description": "Climate appliances must support heat/cool and off. Fan control uses a radiator surface sensor by default; policy settings can select a pipe sensor plus confirmed radiator heating instead. For switch/light relays, any positive speed request means fully on; 0 means off. Relays cannot enforce a reduced night speed. Exhaust control is optional; kitchen lights with brightness support use the calibrated dimmer curve.",
+        "description": "Radiators support heat/off or heat only with min_temp; floor thermostats require heat/off and AC cool/off. A selected radiator surface sensor determines heat output instead of hvac_action. Fan relays support on/off only.",
         "data": {
           "radiator_entity": "Radiator thermostat",
           "radiator_fan_entity": "Radiator fans or relays (fan / switch / light)",
@@ -217,7 +234,23 @@
           "radiator_fan_degrees_per_hour": "Additional radiator fan heating (°C/h)",
           "floor_degrees_per_hour": "Floor heating rate (°C/h)",
           "cooling_degrees_per_hour": "AC cooling rate (°C/h)",
-          "computer_degrees_per_kwh": "Computer thermal gain (°C/kWh)"
+          "computer_degrees_per_kwh": "Computer thermal gain (°C/kWh)",
+          "radiator_hot_delta": "Radiator heating: difference above room temperature (°C)",
+          "radiator_cold_delta": "Radiator cooled: difference above room temperature (°C)"
+        }
+      },
+      "notifications": {
+        "title": "Phone notifications",
+        "description": "Disabled by default. Copy the HA mobile app action from Developer Tools → Actions. Problems must persist for the full delay. Confirmed heating outages require an availability sensor; suspected outages require pipe and surface sensors. Fan state does not prove physical rotation.",
+        "data": {
+          "notifications_enabled": "Enable notifications",
+          "notification_service": "Phone action (notify.mobile_app_...)",
+          "notify_errors": "Control errors and low room temperature",
+          "notify_heating_outage": "Heating outage in cold weather",
+          "notification_delay_minutes": "Problem confirmation delay (minutes)",
+          "notification_repeat_minutes": "Repeat interval (minutes)",
+          "notification_cold_outdoor": "Cold outdoor threshold (°C)",
+          "notification_cold_room": "Low room temperature threshold (°C)"
         }
       },
       "init": {
@@ -227,11 +260,13 @@
           "user": "Sensors and period entity",
           "devices": "Appliances and relays",
           "periods": "Periods and target temperatures",
-          "policy": "Control and ventilation thresholds"
+          "policy": "Control and ventilation thresholds",
+          "notifications": "Phone notifications"
         }
       }
     },
     "error": {
+      "invalid_notification_service": "Enter notify.mobile_app_<phone_name>.",
       "invalid_speed_curve": "Use strictly increasing command:airflow pairs from 0:0 to 100:100.",
       "invalid_fan_source": "Select surface or pipe.",
       "invalid_controller": "Select hysteresis, pi or pid.",

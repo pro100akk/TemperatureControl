@@ -216,10 +216,11 @@ class Engine:
                 if d.radiator:
                     d.status, d.reason = "heating", "radiator_priority"
                     pipe_mode = c["fan_temperature_source"] == "pipe"
+                    needs_heat_confirmation = pipe_mode or bool(c.get("radiator_temperature_entity"))
                     fan_temperature = data.pipe_temperature if pipe_mode else data.radiator_temperature
                     if not c.get("radiator_fan_entity"):
                         d.fan_reason = "not_configured"
-                    elif pipe_mode and data.radiator_heating is not True:
+                    elif needs_heat_confirmation and data.radiator_heating is not True:
                         d.fan_reason = "radiator_not_heating"
                     elif fan_temperature is None:
                         d.fan_reason = ("pipe_temperature_unavailable" if pipe_mode
@@ -228,7 +229,7 @@ class Engine:
                         d.fan_reason = "radiator_not_hot"
                     # A hot supply pipe alone is not evidence of an open valve.
                     if (c.get("radiator_fan_entity") and fan_temperature is not None
-                            and (not pipe_mode or data.radiator_heating is True)
+                            and (not needs_heat_confirmation or data.radiator_heating is True)
                             and fan_temperature > data.temperature + 2):
                         maximum = c["night_fan_percent"] if data.period in (
                             c["night_state"], c["pre_sleep_state"], c["pre_wake_state"]
