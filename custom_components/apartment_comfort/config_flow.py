@@ -1,6 +1,7 @@
 """UI-only configuration and reconfiguration."""
 
 from datetime import datetime, timedelta, timezone
+from html import escape
 from zoneinfo import ZoneInfo
 
 try:  # HA renamed its validation dependency; support both generations.
@@ -204,23 +205,29 @@ class ComfortOptionsFlow(FlowMixin, config_entries.OptionsFlow):
     async def async_step_export(self, user_input=None):
         zone = ZoneInfo(self.hass.config.time_zone)
         now = datetime.now(zone).replace(microsecond=0)
-        values = {"start": (now - timedelta(days=1)).replace(tzinfo=None).isoformat(),
-                  "end": now.replace(tzinfo=None).isoformat(), "anonymize": True}
+        # HA's datetime selector splits on a SPACE, not the ISO "T" separator.
+        # Supplying "T" puts the entire timestamp into its date-only field.
+        defaults = {"start": (now - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S"),
+                    "end": now.strftime("%Y-%m-%d %H:%M:%S"), "anonymize": True}
+        values = dict(defaults)
         errors = {}
         if user_input is not None:
             values.update(user_input)
-            try:
-                times = []
-                for key in ("start", "end"):
+            times = []
+            for key in ("start", "end"):
+                try:
                     stamp = datetime.fromisoformat(values[key].replace("Z", "+00:00"))
                     if stamp.tzinfo is None:
                         stamp = stamp.replace(tzinfo=zone)
                     times.append(stamp.astimezone(timezone.utc))
-                if times[0] > times[1]:
-                    raise ValueError("Reversed range")
-            except (ValueError, TypeError, AttributeError):
+                    values[key] = stamp.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S")
+                except (ValueError, TypeError, AttributeError):
+                    # Recover the form even if an old UI sent date + two times.
+                    values[key] = defaults[key]
+                    errors["base"] = "invalid_export_range"
+            if not errors and times[0] > times[1]:
                 errors["base"] = "invalid_export_range"
-            else:
+            if not errors:
                 coordinator = getattr(self.config_entry, "runtime_data", None)
                 if coordinator is None or coordinator.stopping:
                     errors["base"] = "export_not_loaded"
@@ -242,4 +249,4 @@ class ComfortOptionsFlow(FlowMixin, config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_abort(reason="export_closed")
         return self.async_show_form(step_id="export_ready", data_schema=vol.Schema({}),
-                                    description_placeholders={"download_url": self._export_link})
+                                    description_placeholders={"download_url": escape(self._export_link, quote=True)})

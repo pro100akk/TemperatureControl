@@ -40,6 +40,13 @@ def fake_module(name, **attrs):
 
 class OptionsTests(unittest.TestCase):
     def setUp(self):
+        self.form_defaults = {}
+
+        def required(key, **kwargs):
+            if "default" in kwargs:
+                self.form_defaults[key] = kwargs["default"]
+            return key
+
         selectors = SimpleNamespace(
             SelectSelector=lambda config: config,
             DateTimeSelector=lambda: "datetime",
@@ -47,7 +54,7 @@ class OptionsTests(unittest.TestCase):
             BooleanSelector=lambda: "bool", EntitySelector=lambda config: config)
         registry = SimpleNamespace(async_get=lambda hass: SimpleNamespace(async_get=lambda entity: None))
         modules = {
-            "probatio": fake_module("probatio", Required=lambda key, **kw: key,
+            "probatio": fake_module("probatio", Required=required,
                                      Optional=lambda key, **kw: key, Schema=lambda fields: fields),
             "homeassistant": fake_module("homeassistant"),
             "homeassistant.core": fake_module("homeassistant.core", callback=lambda f: f),
@@ -112,6 +119,43 @@ class OptionsTests(unittest.TestCase):
         result = await self.flow.async_step_export({"start": "2026-11-22T10:00:00",
                                                   "end": "2026-11-22T11:00:00", "anonymize": True})
         self.assertEqual(result["errors"]["base"], "export_not_loaded")
+
+    async def test_export_datetime_defaults_survive_frontend_time_edit(self):
+        self.flow.config_entry.runtime_data = SimpleNamespace(stopping=False)
+        result = await self.flow.async_step_export()
+        self.assertEqual(result["step_id"], "export")
+        # ha-selector-datetime renders value.split(" ") then joins the date
+        # and edited time with a space. This reproduces the user's UI action.
+        start_parts = self.form_defaults["start"].split(" ")
+        end_parts = self.form_defaults["end"].split(" ")
+        self.assertEqual(len(start_parts), 2)
+        self.assertEqual(len(end_parts), 2)
+        self.assertNotIn("T", start_parts[0])
+        manager = SimpleNamespace(create_link=Mock(return_value="/api/export?authSig=test"))
+        with patch.dict(sys.modules, {"custom_components.apartment_comfort.export":
+                        fake_module("custom_components.apartment_comfort.export", setup_downloads=lambda hass: manager)}):
+            result = await self.flow.async_step_export({"start": f"{start_parts[0]} 01:00:00",
+                                                      "end": f"{end_parts[0]} 02:30:00", "anonymize": True})
+        self.assertEqual(result["step_id"], "export_ready")
+        self.assertEqual(manager.create_link.call_args.args[1].hour, 15)
+
+    async def test_export_repeated_form_and_broken_old_value_use_selector_format(self):
+        result = await self.flow.async_step_export({"start": "2026-11-23T10:00:00",
+                                                  "end": "2026-11-22T11:00:00", "anonymize": True})
+        self.assertEqual(result["errors"]["base"], "invalid_export_range")
+        self.assertEqual(self.form_defaults["start"], "2026-11-23 10:00:00")
+        self.assertEqual(self.form_defaults["end"], "2026-11-22 11:00:00")
+        result = await self.flow.async_step_export({"start": "2026-11-22T22:41:36 01:00:00",
+                                                  "end": "2026-11-23 11:00:00", "anonymize": True})
+        self.assertEqual(result["errors"]["base"], "invalid_export_range")
+        self.assertEqual(len(self.form_defaults["start"].split(" ")), 2)
+        self.assertNotIn("T", self.form_defaults["start"])
+
+    async def test_download_link_is_escaped_for_html_attribute(self):
+        self.flow._export_link = '/api/export?authSig=test&part="value"'
+        result = await self.flow.async_step_export_ready()
+        self.assertEqual(result["description_placeholders"]["download_url"],
+                         '/api/export?authSig=test&amp;part=&quot;value&quot;')
 
     async def test_notification_settings_are_separate_and_validate_destination(self):
         result = await self.flow.async_step_notifications({"notifications_enabled": True, "notification_service": "notify.all"})

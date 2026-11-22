@@ -1,6 +1,7 @@
 """Check UI label completeness and valid packaged JSON."""
 
 import json
+from html.parser import HTMLParser
 from pathlib import Path
 import unittest
 
@@ -12,6 +13,28 @@ COMPONENT = ROOT / "custom_components/apartment_comfort"
 
 
 class AssetTests(unittest.TestCase):
+    def test_export_link_bypasses_ha_internal_navigation(self):
+        class Anchors(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.anchors = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag == "a":
+                    self.anchors.append(dict(attrs))
+
+        for name in ("strings.json", "translations/en.json", "translations/ru.json"):
+            data = json.loads((COMPONENT / name).read_text(encoding="utf-8"))
+            description = data["options"]["step"]["export_ready"]["description"]
+            parser = Anchors()
+            parser.feed(description.format(download_url="/api/apartment_comfort/history/ticket?authSig=signed"))
+            self.assertEqual(len(parser.anchors), 1)
+            anchor = parser.anchors[0]
+            # HA's isNavigationClick deliberately ignores anchors with target.
+            # target/href are also allowed by the frontend Markdown sanitizer.
+            self.assertEqual(anchor["target"], "_blank")
+            self.assertEqual(anchor["href"], "/api/apartment_comfort/history/ticket?authSig=signed")
+
     def test_ui_labels_cover_configuration(self):
         expected = set(DEFAULTS) | set(SENSOR_FIELDS) | set(ACTUATOR_FIELDS)
         for language in ("en", "ru"):
