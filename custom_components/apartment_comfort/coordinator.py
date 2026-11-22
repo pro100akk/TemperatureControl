@@ -46,6 +46,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
         self.unsubs = []
         self.owned = set()
         self.last_commands = {}
+        self.failed_commands = {}
         self.ac_stopped = monotonic()  # Restart never bypasses compressor cooldown.
         self.issues = []
         self.regime_reason = "operating_state_unknown"
@@ -529,6 +530,13 @@ class ComfortCoordinator(DataUpdateCoordinator):
 
     async def _call(self, entity_id, service, data=None):
         started = monotonic()
+        payload = data or {}
+        failed = self.failed_commands.get(entity_id)
+        if failed and failed[:2] == (service, payload) and started - failed[2] < 60:
+            self.issues.append(f"{entity_id}: command retry delayed after service failure")
+            return False
+        # A changed request (especially shutdown) must not inherit a retry delay.
+        self.failed_commands.pop(entity_id, None)
         command_id = self.commands.begin(entity_id, service, data or {}, started)
         self.debug.record("command_start", command_id=command_id,
                           entity_id=entity_id, service=service, payload=data or {})
@@ -548,6 +556,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
             self._check_commands()
             return True
         except (HomeAssistantError, ValueError) as err:
+            self.failed_commands[entity_id] = (service, dict(payload), monotonic())
             result = self.commands.failed(entity_id, service, monotonic())
             if result:
                 self.debug.record("command_confirmation", **result)
@@ -597,6 +606,9 @@ class ComfortCoordinator(DataUpdateCoordinator):
         if entity_id not in self.owned:
             return True
         state = self.hass.states.get(entity_id)
+        if state is None or state.state in ("unknown", "unavailable"):
+            self.issues.append(f"{entity_id}: waiting for device before shutdown")
+            return False
         if self._temperature_only_radiator(entity_id, state):
             return await self._radiator_standby(entity_id, state)
         success = state is not None and state.state == "off"
@@ -673,7 +685,11 @@ class ComfortCoordinator(DataUpdateCoordinator):
             native = max(native, low)
         if high is not None:
             native = min(native, high)
-        step = state.attributes.get("target_temp_step", 0.5) or 0.5
+        step = state.attributes.get("target_temp_step")
+        if not isinstance(step, (int, float)) or isinstance(step, bool) or not isfinite(step) or step <= 0:
+            # Heat-only TRVs may accept only whole degrees without advertising a
+            # step. Do not repeatedly request unrepresentable half-degree values.
+            step = 1.0 if temperature_only else 0.5
         # Do not round a positive heat demand back down to the local reading.
         native = (ceil(native / step - 1e-9) if local is not None
                   else round(native / step)) * step
@@ -784,7 +800,11 @@ class ComfortCoordinator(DataUpdateCoordinator):
         radiator_ok = await self._climate("radiator_entity", d.radiator, "heat", d.actuator_target or d.target)
         await self._climate("floor_entity", d.floor, "heat", d.target)
         await self._climate("ac_entity", d.cooling, "cool", d.actuator_target or d.target)
-        await self._fan(d.fan_percent if radiator_ok and d.radiator else 0)
+        # A failed valve adjustment does not make an already hot radiator cold.
+        # Only fresh surface evidence may bypass that failure, never hvac_action.
+        surface_hot = (self.radiator_heat_source == "surface"
+                       and self.inputs.radiator_heating is True)
+        await self._fan(d.fan_percent if d.radiator and (radiator_ok or surface_hot) else 0)
 
     async def _persist(self):
         await self.store.async_save(self._snapshot())

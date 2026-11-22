@@ -76,6 +76,89 @@ def state(value, **attrs):
 
 
 class AdapterTests(unittest.TestCase):
+    async def test_heat_only_missing_step_uses_confirmable_whole_degrees(self):
+        self.temperature_only_radiator(current_temperature=27)
+        self.c.inputs.temperature = 25.4
+        await self.c._climate("radiator_entity", True, "heat", 25.6)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 28)
+        self.assertEqual(self.c.commands.snapshot()["pending"], 0)
+        await self.c._climate("radiator_entity", True, "heat", 25.6)
+        self.assertEqual(self.hass.services.async_call.await_count, 1)
+
+    async def test_heat_only_honors_explicit_fractional_step_and_limits(self):
+        self.temperature_only_radiator(current_temperature=27, target_temp_step=0.5)
+        self.c.inputs.temperature = 25.4
+        await self.c._climate("radiator_entity", True, "heat", 25.6)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 27.5)
+        self.states["climate.rad"].attributes.update(target_temp_step=1, max_temp=28.5)
+        await self.c._climate("radiator_entity", True, "heat", 30)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 28.5)
+
+    async def test_invalid_temperature_steps_do_not_crash_control(self):
+        for step in (None, 0, -1, float("nan"), float("inf"), "bad", True):
+            self.temperature_only_radiator(current_temperature=27, target_temp_step=step)
+            self.c.last_commands.clear()
+            self.c.inputs.temperature = 25.4
+            await self.c._climate("radiator_entity", True, "heat", 25.6)
+            self.assertEqual(self.states["climate.rad"].attributes["temperature"], 28)
+
+    async def test_failed_command_backoff_retries_and_allows_shutdown(self):
+        self.temperature_only_radiator(temperature=28)
+        self.c.owned.add("climate.rad")
+        self.hass.services.async_call.side_effect = FakeError("unreachable")
+        with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=100):
+            self.assertFalse(await self.c._call("climate.rad", "set_temperature", {"temperature": 29}))
+        with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=159):
+            self.assertFalse(await self.c._call("climate.rad", "set_temperature", {"temperature": 29}))
+        self.assertEqual(self.hass.services.async_call.await_count, 1)
+        self.assertEqual(self.c.commands.stats["climate.rad"]["service_errors"], 1)
+        with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=160):
+            self.assertFalse(await self.c._call("climate.rad", "set_temperature", {"temperature": 29}))
+            self.hass.services.async_call.side_effect = self.apply_service
+            self.assertTrue(await self.c._off("climate.rad"))
+        self.assertEqual(self.hass.services.async_call.await_count, 3)
+        self.assertEqual(self.states["climate.rad"].attributes["temperature"], 5)
+        self.assertNotIn("climate.rad", self.c.failed_commands)
+
+    async def test_unavailable_owned_trv_waits_then_uses_minimum_not_off(self):
+        self.c.owned.add("climate.rad")
+        for unavailable in (None, state("unavailable"), state("unknown")):
+            self.states["climate.rad"] = unavailable
+            self.assertFalse(await self.c._off("climate.rad"))
+        self.hass.services.async_call.assert_not_awaited()
+        self.assertIn("climate.rad", self.c.owned)
+        self.temperature_only_radiator(temperature=28)
+        self.assertTrue(await self.c._off("climate.rad"))
+        self.hass.services.async_call.assert_awaited_once_with(
+            "climate", "set_temperature", {"entity_id": "climate.rad", "temperature": 5.0}, blocking=True)
+
+    async def test_hot_surface_keeps_fan_on_during_valve_failure_only_with_demand(self):
+        self.temperature_only_radiator(temperature=7)
+        self.c.config.update(radiator_temperature_entity="sensor.surface",
+                             radiator_fan_entity="fan.rad", fan_temperature_source="surface")
+        self.c.engine.config.update(self.c.config)
+        self.states["sensor.surface"] = state("45", unit_of_measurement="°C")
+        self.states["fan.rad"] = state("on", percentage=20)
+        self.c.owned.add("fan.rad")
+        async def valve_failure(domain, service, data, **kwargs):
+            if data["entity_id"] == "climate.rad":
+                raise FakeError("unreachable")
+            await self.apply_service(domain, service, data, **kwargs)
+        self.hass.services.async_call.side_effect = valve_failure
+        await self.c.async_tick()
+        self.assertEqual(self.states["fan.rad"].state, "on")
+        self.assertTrue(self.c.decision.radiator)
+        self.assertTrue(any("unreachable" in issue for issue in self.c.issues))
+        self.states["sensor.surface"].last_reported -= timedelta(days=1)
+        await self.c.async_tick()
+        self.assertEqual(self.states["fan.rad"].state, "off")
+        self.states["sensor.surface"] = state("45", unit_of_measurement="°C")
+        await self.c.async_tick()
+        self.assertEqual(self.states["fan.rad"].state, "on")
+        self.states["sensor.room"].state = "24"
+        await self.c.async_tick()
+        self.assertEqual(self.states["fan.rad"].state, "off")
+
     async def test_command_confirmation_measures_delayed_device_response(self):
         self.hass.services.async_call.side_effect = None
         with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=100):
