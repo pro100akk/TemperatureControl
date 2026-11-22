@@ -77,7 +77,14 @@ class OptionsTests(unittest.TestCase):
     async def test_menu_exposes_all_sections(self):
         result = await self.flow.async_step_init()
         self.assertEqual(result["type"], "menu")
-        self.assertEqual(result["menu_options"], ["user", "devices", "periods", "policy", "notifications"])
+        self.assertEqual(result["menu_options"], ["user", "devices", "periods", "policy", "notifications", "debug"])
+
+    async def test_debug_can_be_enabled_and_disabled_without_losing_devices(self):
+        for enabled in (True, False):
+            result = await self.flow.async_step_debug({"debug_enabled": enabled,
+                                                       "debug_max_file_mb": 2, "debug_backup_count": 1})
+            self.assertEqual(result["data"]["debug_enabled"], enabled)
+            self.assertEqual(result["data"]["radiator_entity"], "climate.rad")
 
     async def test_notification_settings_are_separate_and_validate_destination(self):
         result = await self.flow.async_step_notifications({"notifications_enabled": True, "notification_service": "notify.all"})

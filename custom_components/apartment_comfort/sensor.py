@@ -85,6 +85,7 @@ class ComfortSensor(ComfortEntity, SensorEntity):
                     "exhaust_recommendations": c.decision.exhaust_recommendations}
         if self.key == "status":
             return {"decision": asdict(c.decision), "inputs": asdict(c.inputs),
+                    "quality": c.quality.snapshot(), "command_confirmation": c.commands.snapshot(),
                     "thermal_model": c.engine.model.rates,
                     "issues": c.issues, "floor_locked": c.engine.floor_locked,
                     "manual_hold": c.manual_hold,

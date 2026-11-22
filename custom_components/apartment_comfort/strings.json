@@ -58,6 +58,8 @@
         "title": "Control and ventilation limits",
         "description": "Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
         "data": {
+          "command_confirmation_seconds": "Command confirmation timeout (seconds)",
+          "command_failure_threshold": "Consecutive command failures before warning",
           "kitchen_control_enabled": "Control kitchen exhaust",
           "shower_control_enabled": "Control shower fan",
           "kitchen_night_allowed": "Allow kitchen exhaust at night",
@@ -118,6 +120,15 @@
           "notification_repeat_minutes": "Repeat interval (minutes)",
           "notification_cold_outdoor": "Cold outdoor threshold (°C)",
           "notification_cold_room": "Low room temperature threshold (°C)"
+        }
+      },
+      "debug": {
+        "title": "Debug recording",
+        "description": "Disabled by default. Local JSONL files in apartment_comfort_debug inside the HA configuration directory. Includes entity IDs and household activity. Files rotate by size; disabling keeps existing files.",
+        "data": {
+          "debug_enabled": "Enable debug recording",
+          "debug_max_file_mb": "Maximum file size (MiB)",
+          "debug_backup_count": "Rotated files to keep"
         }
       }
     },
@@ -191,6 +202,8 @@
         "title": "Control and ventilation limits",
         "description": "Control is disabled by default. Before enabling, switch selected appliances off and disable conflicting climate automations. Thresholds are adjustable starting values, not air-quality guarantees.",
         "data": {
+          "command_confirmation_seconds": "Command confirmation timeout (seconds)",
+          "command_failure_threshold": "Consecutive command failures before warning",
           "kitchen_control_enabled": "Control kitchen exhaust",
           "shower_control_enabled": "Control shower fan",
           "kitchen_night_allowed": "Allow kitchen exhaust at night",
@@ -253,6 +266,15 @@
           "notification_cold_room": "Low room temperature threshold (°C)"
         }
       },
+      "debug": {
+        "title": "Debug recording",
+        "description": "Disabled by default. Local JSONL files in apartment_comfort_debug inside the HA configuration directory. Includes entity IDs and household activity. Files rotate by size; disabling keeps existing files.",
+        "data": {
+          "debug_enabled": "Enable debug recording",
+          "debug_max_file_mb": "Maximum file size (MiB)",
+          "debug_backup_count": "Rotated files to keep"
+        }
+      },
       "init": {
         "title": "Settings",
         "description": "Choose a section. Saving applies that section and preserves the other settings.",
@@ -261,7 +283,8 @@
           "devices": "Appliances and relays",
           "periods": "Periods and target temperatures",
           "policy": "Control and ventilation thresholds",
-          "notifications": "Phone notifications"
+          "notifications": "Phone notifications",
+          "debug": "Debug recording"
         }
       }
     },

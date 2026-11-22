@@ -7,8 +7,12 @@ from .coordinator import ComfortCoordinator
 async def async_setup_entry(hass, entry):
     coordinator = ComfortCoordinator(hass, entry)
     entry.runtime_data = coordinator
-    await coordinator.async_initialize()
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        await coordinator.async_initialize()
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        await coordinator.debug.async_close()
+        raise
     coordinator.start()
     entry.async_on_unload(entry.add_update_listener(_reload))
     return True

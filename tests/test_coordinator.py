@@ -76,6 +76,42 @@ def state(value, **attrs):
 
 
 class AdapterTests(unittest.TestCase):
+    async def test_command_confirmation_measures_delayed_device_response(self):
+        self.hass.services.async_call.side_effect = None
+        with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=100):
+            self.assertTrue(await self.c._call("climate.rad", "set_hvac_mode", {"hvac_mode": "heat"}))
+        self.assertEqual(self.c.commands.snapshot()["pending"], 1)
+        self.states["climate.rad"].state = "heat"
+        with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=105):
+            self.c._check_commands()
+        self.assertEqual(self.c.commands.snapshot()["pending"], 0)
+        self.assertEqual(self.c.commands.stats["climate.rad"]["last_latency_seconds"], 5)
+        from custom_components.apartment_comfort.diagnostics import async_get_config_entry_diagnostics
+        self.entry.runtime_data = self.c
+        report = await async_get_config_entry_diagnostics(self.hass, self.entry)
+        self.assertNotIn("climate.rad", str(report))
+        self.assertIn("command_confirmation", report)
+        self.assertIn("quality", report)
+
+    async def test_debug_captures_cycle_and_failed_command(self):
+        from unittest.mock import Mock
+        self.c.debug = SimpleNamespace(enabled=True, record=Mock())
+        await self.c.async_tick()
+        events = self.c.debug.record.call_args_list
+        cycle = next(call.kwargs for call in events if call.args == ("cycle",))
+        self.assertIn("sensor.room", cycle["devices"])
+        self.assertIn("temperature", cycle["inputs"])
+        self.assertIn("decision", cycle)
+        from custom_components.apartment_comfort.replay import replay_cycle
+        import json
+        self.assertEqual(replay_cycle(json.loads(json.dumps(cycle)))["differences"], {})
+        self.hass.services.async_call.side_effect = FakeError("unreachable")
+        self.assertFalse(await self.c._call("climate.rad", "set_hvac_mode", {"hvac_mode": "heat"}))
+        result = self.c.debug.record.call_args
+        self.assertEqual(result.args, ("command_result",))
+        self.assertFalse(result.kwargs["success"])
+        self.assertEqual(result.kwargs["error"], "unreachable")
+
     def temperature_only_radiator(self, **attrs):
         self.states["climate.rad"] = state(
             "heat", hvac_modes=["heat"], min_temp=5, max_temp=30,

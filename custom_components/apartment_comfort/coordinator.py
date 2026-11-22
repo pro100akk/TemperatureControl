@@ -19,6 +19,9 @@ from .const import ACTUATOR_FIELDS, DEFAULTS, DOMAIN, SENSOR_FIELDS, EXHAUST_FIE
 from .engine import Engine, Inputs
 from .ventilation import speed_curve, interpolate
 from .notifications import ComfortNotifications
+from .debug_recorder import DebugRecorder, state_snapshot
+from .monitoring import CommandMonitor, QualityMetrics
+from .replay import checkpoint
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +32,10 @@ class ComfortCoordinator(DataUpdateCoordinator):
         self.entry = entry
         # Options are a complete snapshot: omitted optional roles mean removal.
         self.config = DEFAULTS | dict(entry.options or entry.data)
+        self.debug = DebugRecorder(hass, entry.entry_id, self.config)
+        self.commands = CommandMonitor(self.config["command_confirmation_seconds"],
+                                       self.config["command_failure_threshold"])
+        self.quality = QualityMetrics()
         self.engine = Engine(self.config)
         self.mode = "heat"
         self.override = None
@@ -56,6 +63,8 @@ class ComfortCoordinator(DataUpdateCoordinator):
         self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
 
     async def async_initialize(self):
+        self.debug.record("session_start", config={k: v for k, v in self.config.items()
+                          if k not in ("name", "notification_service")})
         saved = await self.store.async_load() or {}
         self.notifications.restore(saved.get("notifications", {}))
         if saved.get("model_sources") == self._model_sources():
@@ -112,6 +121,13 @@ class ComfortCoordinator(DataUpdateCoordinator):
         new = event.data.get("new_state")
         old = event.data.get("old_state")
         entity = event.data["entity_id"]
+        if entity in entity_ids(self.config, (*ACTUATOR_FIELDS, *EXHAUST_FIELDS)):
+            if entity not in self.quality.device_states:
+                self.quality.device(entity, old)
+            self.quality.device(entity, new)
+        if self.debug.enabled:
+            self.debug.record("state_changed", entity_id=entity,
+                              old=state_snapshot(old), new=state_snapshot(new))
         if (new and entity in {self.config.get(k) for k in EXHAUST_FIELDS}
                 and (new.context.id in self.exhaust_contexts or new.context.parent_id in self.exhaust_contexts)
                 and entity in self.owned):
@@ -123,6 +139,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 and new.context.id not in self.exhaust_contexts
                 and new.context.parent_id not in self.exhaust_contexts):
             self.owned.discard(entity)
+            self.commands.cancel(entity)
             if new.state == "on":
                 self.exhaust_holds.add(entity)
             else:
@@ -137,8 +154,10 @@ class ComfortCoordinator(DataUpdateCoordinator):
         if (new and event.data["entity_id"] in set(entity_ids(self.config, ACTUATOR_FIELDS))
                 and new.context.user_id is not None and new.context.parent_id is None):
             self.manual_hold = True
+            self.commands.cancel(entity)
             self.owned.discard(event.data["entity_id"])
             self._save()
+        self._check_commands()
         self.hass.async_create_task(self.async_tick())
 
     @staticmethod
@@ -154,6 +173,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
             if state and state.state in ("on", "off") and expected:
                 if self._exhaust_signature(state) != expected:
                     self.owned.discard(entity)
+                    self.commands.cancel(entity)
                     if state.state == "on":
                         self.exhaust_holds.add(entity)
                     else:
@@ -176,6 +196,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 blocking=True, return_response=True)
             self.weather_rows = (response or {}).get(entity, {}).get("forecast", [])
         except (HomeAssistantError, ValueError, TypeError) as err:
+            self.debug.record("weather_error", error_type=type(err).__name__, error=str(err))
             self.issues.append(f"weather forecast: {err}")
 
     def _weather_inputs(self, data):
@@ -340,14 +361,24 @@ class ComfortCoordinator(DataUpdateCoordinator):
         return self.radiator_heat_state
 
     async def async_tick(self, _now=None):
+        try:
+            await self._async_tick()
+        except Exception as err:
+            self.debug.record("cycle_error", error_type=type(err).__name__, error=str(err))
+            raise
+
+    async def _async_tick(self):
         async with self.lock:
             if self.stopping:
                 return
             self.issues = []
+            self._check_commands()
             self.radiator_command = {}
             self._check_exhaust_overrides()
             await self._weather()
             self.inputs = self._read()
+            for entity in entity_ids(self.config, (*ACTUATOR_FIELDS, *EXHAUST_FIELDS)):
+                self.quality.device(entity, self.hass.states.get(entity))
             now = monotonic()
             self.engine.model.observe(
                 self.inputs.temperature, self.inputs.outdoor_temperature,
@@ -358,6 +389,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 self.engine.pid.reset()
             predicted, self.estimate_status = self.engine.model.estimate(
                 self.inputs, self.config["forecast_minutes"], self.config)
+            replay = checkpoint(self.engine, now, predicted) if self.debug.enabled else None
             self.decision = self.engine.evaluate(
                 self.inputs, now, self.mode, self.override, predicted_temperature=predicted)
             if self.config["control_enabled"] and not self.manual_hold:
@@ -369,9 +401,33 @@ class ComfortCoordinator(DataUpdateCoordinator):
                     self.engine.pid.reset()
             elif not self.config["control_enabled"] and self.owned:
                 await self._release_all()
+            self._check_commands()
+            self.issues.extend(self.commands.issues())
+            for entity in entity_ids(self.config, (*ACTUATOR_FIELDS, *EXHAUST_FIELDS)):
+                self.quality.device(entity, self.hass.states.get(entity))
+            self.quality.observe(
+                now, self.inputs.temperature, self.decision.target, self.config["deadband"],
+                self.config["control_enabled"] and not self.manual_hold
+                and self.decision.status not in ("off", "blocked", "ventilating"),
+                predicted, self.config["forecast_minutes"],
+                (self.mode, self.decision.target, self.inputs.window, self.inputs.radiator_heating,
+                 self.inputs.floor_heating, self.inputs.ac_cooling, self.inputs.radiator_fan,
+                 self.inputs.cooking, self.inputs.kitchen_airflow, self.inputs.shower_exhaust))
             await self.notifications.async_update(now)
             self._save()
             self.async_set_updated_data(asdict(self.decision))
+            if self.debug.enabled:
+                self.debug.record(
+                    "cycle", inputs=asdict(self.inputs), decision=asdict(self.decision), replay=replay,
+                    quality=self.quality.snapshot(), command_confirmation=self.commands.snapshot(),
+                    mode=self.mode, override=self.override, manual_hold=self.manual_hold,
+                    control_enabled=self.config["control_enabled"],
+                    owned=sorted(self.owned), exhaust_holds=sorted(self.exhaust_holds),
+                    issues=list(self.issues), radiator_command=self.radiator_command,
+                    forecast_status=self.forecast_status, fan_status=self.fan_status,
+                    thermal_model=self.engine.model.rates,
+                    devices={entity: state_snapshot(self.hass.states.get(entity))
+                             for entity in entity_ids(self.config, (*SENSOR_FIELDS, *ACTUATOR_FIELDS))})
 
     def _thermal_regime(self):
         """Use confirmed actions, never requested modes as evidence of heat output."""
@@ -467,7 +523,15 @@ class ComfortCoordinator(DataUpdateCoordinator):
             })
         return result
 
+    def _check_commands(self):
+        for result in self.commands.check(self.hass.states, monotonic()):
+            self.debug.record("command_confirmation", **result)
+
     async def _call(self, entity_id, service, data=None):
+        started = monotonic()
+        command_id = self.commands.begin(entity_id, service, data or {}, started)
+        self.debug.record("command_start", command_id=command_id,
+                          entity_id=entity_id, service=service, payload=data or {})
         try:
             kwargs = {}
             if entity_id in {self.config.get(k) for k in EXHAUST_FIELDS}:
@@ -477,8 +541,19 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 kwargs["context"] = context
             await self.hass.services.async_call(entity_id.split(".")[0], service,
                                                 {"entity_id": entity_id, **(data or {})}, blocking=True, **kwargs)
+            self.debug.record("command_result", entity_id=entity_id, service=service,
+                              command_id=command_id, success=True,
+                              duration_ms=round((monotonic() - started) * 1000, 2),
+                              state=state_snapshot(self.hass.states.get(entity_id)))
+            self._check_commands()
             return True
         except (HomeAssistantError, ValueError) as err:
+            result = self.commands.failed(entity_id, service, monotonic())
+            if result:
+                self.debug.record("command_confirmation", **result)
+            self.debug.record("command_result", entity_id=entity_id, service=service,
+                              command_id=command_id, success=False, error_type=type(err).__name__, error=str(err),
+                              duration_ms=round((monotonic() - started) * 1000, 2))
             self.issues.append(f"{entity_id}: {err}")
             _LOGGER.warning("Command %s failed for %s: %s", service, entity_id, err)
             return False
@@ -768,6 +843,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 self.exhaust_expected[entity] = self._exhaust_signature(state)
 
     async def async_set_mode(self, mode):
+        self.debug.record("user_action", action="set_mode", value=mode)
         async with self.lock:
             self.mode = mode
             self.manual_hold = False
@@ -776,12 +852,14 @@ class ComfortCoordinator(DataUpdateCoordinator):
         await self.async_tick()
 
     async def async_set_target(self, target):
+        self.debug.record("user_action", action="set_target", value=target)
         async with self.lock:
             self.override = target
             self.override_period = self.inputs.period
         await self.async_tick()
 
     async def async_resume_schedule(self):
+        self.debug.record("user_action", action="resume_schedule")
         async with self.lock:
             self.override = None
             self.manual_hold = False
@@ -791,10 +869,13 @@ class ComfortCoordinator(DataUpdateCoordinator):
     async def async_stop(self):
         async with self.lock:
             if not await self._release_all():
+                self.debug.record("stop_blocked", issues=list(self.issues))
                 return False
             self.stopping = True
             for unsub in self.unsubs:
                 unsub()
             self.unsubs.clear()
             await self._persist()
+            self.debug.record("session_stop")
+            await self.debug.async_close()
             return True

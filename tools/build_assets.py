@@ -8,6 +8,11 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "apartment_comfort"
 
 LABELS = {
+    "command_confirmation_seconds": ("Command confirmation timeout (seconds)", "Ожидание подтверждения команды (секунды)"),
+    "command_failure_threshold": ("Consecutive command failures before warning", "Число последовательных ошибок команд до предупреждения"),
+    "debug_enabled": ("Enable debug recording", "Включить запись отладки"),
+    "debug_max_file_mb": ("Maximum file size (MiB)", "Максимальный размер файла (МиБ)"),
+    "debug_backup_count": ("Rotated files to keep", "Количество архивных файлов"),
     "weather_entity": ("Weather (optional)", "Погода (необязательно)"),
     "kitchen_control_enabled": ("Control kitchen exhaust", "Управлять кухонной вытяжкой"),
     "shower_control_enabled": ("Control shower fan", "Управлять вентилятором душа"),
@@ -164,11 +169,12 @@ def build_translations():
     devices = ["radiator_entity", "radiator_fan_entity", "floor_entity", "ac_entity"]
     periods = [k for k in LABELS if k.endswith("_state") or k.endswith("_temperature") and k != "window_min_temperature"]
     notifications = [k for k in LABELS if k.startswith(("notification", "notify_"))]
-    policy = [k for k in LABELS if k not in sensors + devices + periods + notifications + ["name"]]
+    debug = [k for k in LABELS if k.startswith("debug_")]
+    policy = [k for k in LABELS if k not in sensors + devices + periods + notifications + debug + ["name"]]
     titles = [("Sensors and existing day periods", "Датчики и существующие периоды дня"),
               ("Appliances", "Приборы"), ("Period mapping and temperatures", "Периоды и температуры"),
               ("Control and ventilation limits", "Управление и пороги проветривания"),
-              ("Phone notifications", "Уведомления на телефон")]
+              ("Phone notifications", "Уведомления на телефон"), ("Debug recording", "Запись отладки")]
     descriptions = [
         ("Select existing HA entities. All fields except name, main temperature and period are optional. For cooking use a binary sensor/helper; numeric stove power needs a template binary sensor.",
          "Выберите существующие сущности HA. Обязательны только название, основная температура и период дня. Для готовки нужен бинарный датчик/помощник; числовую мощность плиты предварительно преобразуйте в шаблонный бинарный датчик."),
@@ -179,9 +185,12 @@ def build_translations():
          "Управление по умолчанию отключено. Перед включением выключите выбранные приборы и отключите конфликтующие климатические автоматизации. Пороги — настраиваемые начальные значения, а не гарантия качества воздуха."),
         ('Disabled by default. Copy the HA mobile app action from Developer Tools → Actions. Problems must persist for the full delay. Confirmed heating outages require an availability sensor; suspected outages require pipe and surface sensors. Fan state does not prove physical rotation.', 'По умолчанию выключены. Укажите действие мобильного приложения HA из Инструменты разработчика → Действия. Проблема должна сохраняться всю заданную задержку. Подтверждённое отключение отопления требует датчика доступности; предположение — датчиков трубы и поверхности. Уведомления не проверяют физическое вращение вентилятора.'),
     ]
+    descriptions.append((
+        "Disabled by default. Local JSONL files in apartment_comfort_debug inside the HA configuration directory. Includes entity IDs and household activity. Files rotate by size; disabling keeps existing files.",
+        "По умолчанию выключена. Файлы JSONL в apartment_comfort_debug внутри каталога конфигурации HA. Содержат идентификаторы сущностей и активность дома. Ротация по размеру; выключение сохраняет существующие файлы."))
     for language, index in (("en", 0), ("ru", 1)):
         steps = {}
-        for n, (step, keys) in enumerate((("user", ["name"] + sensors), ("devices", devices), ("periods", periods), ("policy", policy), ("notifications", notifications))):
+        for n, (step, keys) in enumerate((("user", ["name"] + sensors), ("devices", devices), ("periods", periods), ("policy", policy), ("notifications", notifications), ("debug", debug))):
             steps[step] = {"title": titles[n][index], "description": descriptions[n][index],
                            "data": {k: LABELS[k][index] for k in keys}}
         section = {"step": steps, "error": {k: v[index] for k, v in ERRORS.items()}}
@@ -196,6 +205,7 @@ def build_translations():
                 "periods": ("Periods and target temperatures", "Периоды и целевые температуры")[index],
                 "policy": ("Control and ventilation thresholds", "Управление и пороги проветривания")[index],
                 "notifications": ("Phone notifications", "Уведомления на телефон")[index],
+                "debug": ("Debug recording", "Запись отладки")[index],
             },
         }
         data = {
@@ -240,6 +250,7 @@ def build_archive():
         for path in [ROOT / "README.md", ROOT / "LICENSE", *sorted((ROOT / "docs").glob("*.md"))]:
             if path.exists():
                 archive.write(path, path.relative_to(ROOT).as_posix())
+        archive.write(ROOT / "tools/history.py", "tools/history.py")
     print(output)
 
 

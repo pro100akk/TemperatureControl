@@ -17,6 +17,8 @@ INFLUENCE_DEFAULTS = {
 }
 DEFAULTS = {
     **INFLUENCE_DEFAULTS,
+    "debug_enabled": False, "debug_max_file_mb": 5, "debug_backup_count": 3,
+    "command_confirmation_seconds": 60, "command_failure_threshold": 3,
     "name": "Apartment Comfort",
     "morning_state": "morning", "day_state": "day", "evening_state": "evening",
     "pre_sleep_state": "pre_sleep", "night_state": "night", "pre_wake_state": "pre_wake",

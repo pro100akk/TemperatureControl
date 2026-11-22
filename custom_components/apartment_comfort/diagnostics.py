@@ -15,12 +15,21 @@ async def async_get_config_entry_diagnostics(hass, entry):
             aliases[entity] = f"{role}[{index}]"
 
     def anonymize(value):
+        if isinstance(value, dict):
+            return {anonymize(key): anonymize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [anonymize(item) for item in value]
+        if not isinstance(value, str):
+            return value
         for entity in sorted(aliases, key=len, reverse=True):
             value = value.replace(entity, aliases[entity])
         return value
 
     return {
         "version": VERSION, "mode": c.mode,
+        "debug_recording": c.debug.status,
+        "quality": anonymize(c.quality.snapshot()),
+        "command_confirmation": anonymize(c.commands.snapshot()),
         "control_enabled": c.config["control_enabled"],
         "manual_hold": c.manual_hold,
         "controller": c.config["controller"],

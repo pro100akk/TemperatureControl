@@ -14,6 +14,7 @@ from .ventilation import speed_curve
 from .notifications import valid_notification_service
 
 POLICY_RANGES = {
+    "command_confirmation_seconds": (10, 300, 5), "command_failure_threshold": (1, 10, 1),
     "radiator_hot_delta": (0.5, 20, 0.1), "radiator_cold_delta": (0, 10, 0.1),
     "kitchen_airflow_percent": (1, 100, 1),
     "kitchen_night_airflow_percent": (0, 100, 1),
@@ -50,6 +51,11 @@ NOTIFICATION_RANGES = {
 
 def schema_for(step, values):
     fields = {}
+    if step == "debug":
+        fields[vol.Required("debug_enabled", default=values["debug_enabled"])] = selector.BooleanSelector()
+        for key, low, high in (("debug_max_file_mb", 1, 50), ("debug_backup_count", 1, 10)):
+            fields[vol.Required(key, default=values[key])] = selector.NumberSelector(
+                {"min": low, "max": high, "step": 1, "mode": "box"})
     if step == "notifications":
         for key in ("notifications_enabled", "notify_errors", "notify_heating_outage"):
             fields[vol.Required(key, default=values[key])] = selector.BooleanSelector()
@@ -152,9 +158,9 @@ class FlowMixin:
                 if self._values["notifications_enabled"] and not valid_notification_service(self._values["notification_service"]):
                     errors["base"] = "invalid_notification_service"
             if not errors:
-                if isinstance(self, config_entries.OptionsFlow) or step == "notifications":
+                if isinstance(self, config_entries.OptionsFlow) or step == "debug":
                     return self.async_create_entry(title=self._values["name"], data=self._values)
-                next_step = {"user": "devices", "devices": "periods", "periods": "policy", "policy": "notifications"}[step]
+                next_step = {"user": "devices", "devices": "periods", "periods": "policy", "policy": "notifications", "notifications": "debug"}[step]
                 return await self._step(next_step, None)
         return self.async_show_form(step_id=step, data_schema=schema_for(step, self._values), errors=errors)
 
@@ -173,6 +179,9 @@ class FlowMixin:
     async def async_step_notifications(self, user_input=None):
         return await self._step("notifications", user_input)
 
+    async def async_step_debug(self, user_input=None):
+        return await self._step("debug", user_input)
+
 
 class ComfortConfigFlow(FlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -186,5 +195,5 @@ class ComfortConfigFlow(FlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
 class ComfortOptionsFlow(FlowMixin, config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
-            step_id="init", menu_options=["user", "devices", "periods", "policy", "notifications"]
+            step_id="init", menu_options=["user", "devices", "periods", "policy", "notifications", "debug"]
         )
