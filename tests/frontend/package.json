@@ -1,0 +1,14 @@
+{
+  "name": "apartment-comfort-frontend-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test export.test.mjs"
+  },
+  "devDependencies": {
+    "intl-messageformat": "12.2.0",
+    "marked": "18.2.1",
+    "playwright": "1.65.1",
+    "xss": "1.0.17"
+  }
+}

@@ -27,7 +27,10 @@ class AssetTests(unittest.TestCase):
             data = json.loads((COMPONENT / name).read_text(encoding="utf-8"))
             description = data["options"]["step"]["export_ready"]["description"]
             parser = Anchors()
-            parser.feed(description.format(download_url="/api/apartment_comfort/history/ticket?authSig=signed"))
+            self.assertNotIn("<a", description)
+            parser.feed(description.format(
+                download_open='<a href="/api/apartment_comfort/history/ticket?authSig=signed" target="_blank">',
+                download_close="</a>"))
             self.assertEqual(len(parser.anchors), 1)
             anchor = parser.anchors[0]
             # HA's isNavigationClick deliberately ignores anchors with target.

@@ -249,4 +249,9 @@ class ComfortOptionsFlow(FlowMixin, config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_abort(reason="export_closed")
         return self.async_show_form(step_id="export_ready", data_schema=vol.Schema({}),
-                                    description_placeholders={"download_url": escape(self._export_link, quote=True)})
+                                    description_placeholders={
+                                        # ICU parses translation templates before substituting
+                                        # values. Keep HTML attributes out of the template.
+                                        "download_open": f'<a href="{escape(self._export_link, quote=True)}" target="_blank">',
+                                        "download_close": "</a>",
+                                    })

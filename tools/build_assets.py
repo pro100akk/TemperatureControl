@@ -104,7 +104,7 @@ for period, en, ru in (
     LABELS[f"{period}_temperature"] = (f"{en}: target temperature", f"{ru}: целевая температура")
 
 ERRORS = {
-    "invalid_notification_service": ("Enter notify.mobile_app_<phone_name>.", "Укажите действие notify.mobile_app_<имя_телефона>."),
+    "invalid_notification_service": ("Enter an action such as notify.mobile_app_phone.", "Укажите действие вида notify.mobile_app_phone."),
     "invalid_speed_curve": ("Use strictly increasing command:airflow pairs from 0:0 to 100:100.", "Укажите возрастающие пары команда:воздухообмен от 0:0 до 100:100."),
     "invalid_fan_source": ("Select surface or pipe.", "Выберите поверхность батареи или трубу."),
     "invalid_controller": ("Select hysteresis, pi or pid.", "Выберите hysteresis, pi или pid."),
@@ -221,8 +221,8 @@ def build_translations():
         options_section["step"]["export_ready"] = {
             "title": ("Download history", "Скачать историю")[index],
             "description": (
-                '<a href="{download_url}" target="_blank">Download ZIP</a> — this private link expires in 10 minutes. The download opens separately from the HA interface. The archive is built when clicked. Check manifest.json: if truncated is true, select a shorter period; exported=0 means no saved events. Limit: 10,000 records / 16 MiB of history. Closing this form does not change settings.',
-                '<a href="{download_url}" target="_blank">Скачать ZIP</a> — приватная ссылка действует 10 минут. Скачивание открывается отдельно от интерфейса HA. Архив формируется при нажатии. Проверьте manifest.json: при truncated=true выберите меньший период; exported=0 означает отсутствие сохранённых событий. Лимит: 10 000 записей / 16 МиБ истории. Закрытие формы не меняет настройки.')[index],
+                '{download_open}Download ZIP{download_close} — this private link expires in 10 minutes. The download opens separately from the HA interface. The archive is built when clicked. Check manifest.json: if truncated is true, select a shorter period; exported=0 means no saved events. Limit: 10,000 records / 16 MiB of history. Closing this form does not change settings.',
+                '{download_open}Скачать ZIP{download_close} — приватная ссылка действует 10 минут. Скачивание открывается отдельно от интерфейса HA. Архив формируется при нажатии. Проверьте manifest.json: при truncated=true выберите меньший период; exported=0 означает отсутствие сохранённых событий. Лимит: 10 000 записей / 16 МиБ истории. Закрытие формы не меняет настройки.')[index],
         }
         options_section["error"] = dict(options_section["error"], **{
             "invalid_export_range": ("Check the dates: start must not be after end.", "Проверьте даты: начало не должно быть позже конца.")[index],

@@ -133,7 +133,7 @@
       }
     },
     "error": {
-      "invalid_notification_service": "Укажите действие notify.mobile_app_<имя_телефона>.",
+      "invalid_notification_service": "Укажите действие вида notify.mobile_app_phone.",
       "invalid_speed_curve": "Укажите возрастающие пары команда:воздухообмен от 0:0 до 100:100.",
       "invalid_fan_source": "Выберите поверхность батареи или трубу.",
       "invalid_controller": "Выберите hysteresis, pi или pid.",
@@ -299,11 +299,11 @@
       },
       "export_ready": {
         "title": "Скачать историю",
-        "description": "<a href=\"{download_url}\" target=\"_blank\">Скачать ZIP</a> — приватная ссылка действует 10 минут. Скачивание открывается отдельно от интерфейса HA. Архив формируется при нажатии. Проверьте manifest.json: при truncated=true выберите меньший период; exported=0 означает отсутствие сохранённых событий. Лимит: 10 000 записей / 16 МиБ истории. Закрытие формы не меняет настройки."
+        "description": "{download_open}Скачать ZIP{download_close} — приватная ссылка действует 10 минут. Скачивание открывается отдельно от интерфейса HA. Архив формируется при нажатии. Проверьте manifest.json: при truncated=true выберите меньший период; exported=0 означает отсутствие сохранённых событий. Лимит: 10 000 записей / 16 МиБ истории. Закрытие формы не меняет настройки."
       }
     },
     "error": {
-      "invalid_notification_service": "Укажите действие notify.mobile_app_<имя_телефона>.",
+      "invalid_notification_service": "Укажите действие вида notify.mobile_app_phone.",
       "invalid_speed_curve": "Укажите возрастающие пары команда:воздухообмен от 0:0 до 100:100.",
       "invalid_fan_source": "Выберите поверхность батареи или трубу.",
       "invalid_controller": "Выберите hysteresis, pi или pid.",

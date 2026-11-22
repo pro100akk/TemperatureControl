@@ -154,8 +154,9 @@ class OptionsTests(unittest.TestCase):
     async def test_download_link_is_escaped_for_html_attribute(self):
         self.flow._export_link = '/api/export?authSig=test&part="value"'
         result = await self.flow.async_step_export_ready()
-        self.assertEqual(result["description_placeholders"]["download_url"],
-                         '/api/export?authSig=test&amp;part=&quot;value&quot;')
+        self.assertEqual(result["description_placeholders"]["download_open"],
+                         '<a href="/api/export?authSig=test&amp;part=&quot;value&quot;" target="_blank">')
+        self.assertEqual(result["description_placeholders"]["download_close"], "</a>")
 
     async def test_notification_settings_are_separate_and_validate_destination(self):
         result = await self.flow.async_step_notifications({"notifications_enabled": True, "notification_service": "notify.all"})

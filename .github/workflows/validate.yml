@@ -20,6 +20,20 @@ jobs:
         run: python tools/configure_repository.py --check --repository "$GITHUB_REPOSITORY"
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/frontend/package-lock.json
+      - name: Install frontend test dependencies
+        working-directory: tests/frontend
+        run: npm ci
+      - name: Install test browser
+        working-directory: tests/frontend
+        run: npx playwright install --with-deps chromium
+      - name: Validate translations and browser downloads
+        working-directory: tests/frontend
+        run: npm test
       - name: Compile Python
         run: python -m compileall -q custom_components tools tests
       - name: Build installation archive
