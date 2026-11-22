@@ -1,5 +1,8 @@
 """UI-only configuration and reconfiguration."""
 
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
 try:  # HA renamed its validation dependency; support both generations.
     import probatio as vol
 except ImportError:
@@ -195,5 +198,48 @@ class ComfortConfigFlow(FlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
 class ComfortOptionsFlow(FlowMixin, config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
-            step_id="init", menu_options=["user", "devices", "periods", "policy", "notifications", "debug"]
+            step_id="init", menu_options=["user", "devices", "periods", "policy", "notifications", "debug", "export"]
         )
+
+    async def async_step_export(self, user_input=None):
+        zone = ZoneInfo(self.hass.config.time_zone)
+        now = datetime.now(zone).replace(microsecond=0)
+        values = {"start": (now - timedelta(days=1)).replace(tzinfo=None).isoformat(),
+                  "end": now.replace(tzinfo=None).isoformat(), "anonymize": True}
+        errors = {}
+        if user_input is not None:
+            values.update(user_input)
+            try:
+                times = []
+                for key in ("start", "end"):
+                    stamp = datetime.fromisoformat(values[key].replace("Z", "+00:00"))
+                    if stamp.tzinfo is None:
+                        stamp = stamp.replace(tzinfo=zone)
+                    times.append(stamp.astimezone(timezone.utc))
+                if times[0] > times[1]:
+                    raise ValueError("Reversed range")
+            except (ValueError, TypeError, AttributeError):
+                errors["base"] = "invalid_export_range"
+            else:
+                coordinator = getattr(self.config_entry, "runtime_data", None)
+                if coordinator is None or coordinator.stopping:
+                    errors["base"] = "export_not_loaded"
+                else:
+                    from .export import setup_downloads
+
+                    self._export_link = setup_downloads(self.hass).create_link(
+                        self.config_entry.entry_id, *times, values["anonymize"])
+                    return await self.async_step_export_ready()
+        return self.async_show_form(
+            step_id="export", errors=errors, description_placeholders={"timezone": str(zone)},
+            data_schema=vol.Schema({
+                vol.Required("start", default=values["start"]): selector.DateTimeSelector(),
+                vol.Required("end", default=values["end"]): selector.DateTimeSelector(),
+                vol.Required("anonymize", default=values["anonymize"]): selector.BooleanSelector(),
+            }))
+
+    async def async_step_export_ready(self, user_input=None):
+        if user_input is not None:
+            return self.async_abort(reason="export_closed")
+        return self.async_show_form(step_id="export_ready", data_schema=vol.Schema({}),
+                                    description_placeholders={"download_url": self._export_link})

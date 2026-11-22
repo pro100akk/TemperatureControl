@@ -2,9 +2,11 @@
 
 from .const import PLATFORMS
 from .coordinator import ComfortCoordinator
+from .export import setup_downloads
 
 
 async def async_setup_entry(hass, entry):
+    setup_downloads(hass)
     coordinator = ComfortCoordinator(hass, entry)
     entry.runtime_data = coordinator
     try:

@@ -206,8 +206,29 @@ def build_translations():
                 "policy": ("Control and ventilation thresholds", "Управление и пороги проветривания")[index],
                 "notifications": ("Phone notifications", "Уведомления на телефон")[index],
                 "debug": ("Debug recording", "Запись отладки")[index],
+                "export": ("Export history", "Экспорт истории")[index],
             },
         }
+        options_section["step"]["export"] = {
+            "title": ("Export history", "Экспорт истории")[index],
+            "description": (
+                "Select a period in the HA time zone ({timezone}). The ZIP contains saved events, errors and current diagnostics. Recording must have been enabled beforehand. Anonymization removes free-text errors; turn it off only for a private investigation.",
+                "Выберите период в часовом поясе HA ({timezone}). ZIP содержит сохранённые события, ошибки и текущую диагностику. Запись отладки должна быть включена заранее. Анонимизация удаляет свободный текст ошибок; выключайте её только для приватного разбора.")[index],
+            "data": {"start": ("Start", "Начало периода")[index],
+                     "end": ("End", "Конец периода")[index],
+                     "anonymize": ("Anonymize data", "Анонимизировать данные")[index]},
+        }
+        options_section["step"]["export_ready"] = {
+            "title": ("Download history", "Скачать историю")[index],
+            "description": (
+                "[Download ZIP]({download_url}) — this private link expires in 10 minutes. The archive is built when clicked. Check manifest.json: if truncated is true, select a shorter period; exported=0 means no saved events. Limit: 10,000 records / 16 MiB of history. Closing this form does not change settings.",
+                "[Скачать ZIP]({download_url}) — приватная ссылка действует 10 минут. Архив формируется при нажатии. Проверьте manifest.json: при truncated=true выберите меньший период; exported=0 означает отсутствие сохранённых событий. Лимит: 10 000 записей / 16 МиБ истории. Закрытие формы не меняет настройки.")[index],
+        }
+        options_section["error"] = dict(options_section["error"], **{
+            "invalid_export_range": ("Check the dates: start must not be after end.", "Проверьте даты: начало не должно быть позже конца.")[index],
+            "export_not_loaded": ("Load the integration before exporting.", "Для экспорта интеграция должна быть загружена.")[index],
+        })
+        options_section["abort"] = {"export_closed": ("Export dialog closed. Settings unchanged.", "Окно экспорта закрыто. Настройки не изменены.")[index]}
         data = {
             "title": "Apartment Comfort", "config": section, "options": options_section,
             "selector": {"fan_temperature_source": {"options": {

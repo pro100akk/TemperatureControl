@@ -97,7 +97,10 @@ class Anonymizer:
     def record(self, record):
         # Seed period aliases before processing inputs so custom state names match.
         data = record["data"]
-        config = data.get("replay", {}).get("config", data.get("config", {}))
+        replay = data.get("replay")
+        config = replay.get("config", {}) if isinstance(replay, dict) else data.get("config", {})
+        if not isinstance(config, dict):
+            config = {}
         for key, value in config.items():
             if key.endswith("_state") and isinstance(value, str):
                 self.periods.setdefault(value, f"period_{len(self.periods) + 1}")

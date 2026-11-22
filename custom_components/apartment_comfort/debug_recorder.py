@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 from .version import VERSION
@@ -35,6 +36,7 @@ class DebugRecorder:
 
     def __init__(self, hass, entry_id, config):
         self.hass = hass
+        self.io_lock = Lock()
         self.enabled = config["debug_enabled"]
         self.max_bytes = int(config["debug_max_file_mb"]) * 1024 * 1024
         self.backups = int(config["debug_backup_count"])
@@ -88,6 +90,10 @@ class DebugRecorder:
             _LOGGER.exception("Debug recording stopped after a write error; toggle debug to retry")
 
     def _write(self, batch):
+        with self.io_lock:
+            self._write_locked(batch)
+
+    def _write_locked(self, batch):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         size = self.path.stat().st_size if self.path.exists() else 0
         for line in batch:

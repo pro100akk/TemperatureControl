@@ -18,7 +18,9 @@ class AssetTests(unittest.TestCase):
             data = json.loads((COMPONENT / f"translations/{language}.json").read_text(encoding="utf-8"))
             for section in ("config", "options"):
                 actual = set()
-                for step in data[section]["step"].values():
+                for key, step in data[section]["step"].items():
+                    if key in ("export", "export_ready"):
+                        continue
                     actual |= set(step.get("data", {}))
                 self.assertEqual(expected, actual, (language, section))
 

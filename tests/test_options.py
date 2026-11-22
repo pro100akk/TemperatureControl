@@ -4,7 +4,7 @@ import importlib
 import sys
 from types import ModuleType, SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import bootstrap  # noqa: F401
 from test_coordinator import immediate_coroutine_test
@@ -24,6 +24,9 @@ class Flow:
     def async_create_entry(self, **kwargs):
         return {"type": "create_entry", **kwargs}
 
+    def async_abort(self, **kwargs):
+        return {"type": "abort", **kwargs}
+
 
 class OptionsFlow(Flow):
     pass
@@ -39,6 +42,7 @@ class OptionsTests(unittest.TestCase):
     def setUp(self):
         selectors = SimpleNamespace(
             SelectSelector=lambda config: config,
+            DateTimeSelector=lambda: "datetime",
             TextSelector=lambda: "text", NumberSelector=lambda config: config,
             BooleanSelector=lambda: "bool", EntitySelector=lambda config: config)
         registry = SimpleNamespace(async_get=lambda hass: SimpleNamespace(async_get=lambda entity: None))
@@ -58,7 +62,8 @@ class OptionsTests(unittest.TestCase):
         self.original = DEFAULTS | {"temperature_entity": "sensor.room", "period_entity": "input_select.period",
                                     "radiator_entity": "climate.rad", "radiator_fan_entity": "fan.old"}
         self.flow.config_entry = SimpleNamespace(entry_id="zone", data=self.original, options={})
-        self.flow.hass = SimpleNamespace(config_entries=SimpleNamespace(async_entries=lambda domain: [self.flow.config_entry]))
+        self.flow.hass = SimpleNamespace(config=SimpleNamespace(time_zone="Asia/Vladivostok"),
+                                        config_entries=SimpleNamespace(async_entries=lambda domain: [self.flow.config_entry]))
 
     async def test_multiple_fans_and_conflicts(self):
         fans = ["fan.one", "switch.two", "light.three"]
@@ -77,7 +82,7 @@ class OptionsTests(unittest.TestCase):
     async def test_menu_exposes_all_sections(self):
         result = await self.flow.async_step_init()
         self.assertEqual(result["type"], "menu")
-        self.assertEqual(result["menu_options"], ["user", "devices", "periods", "policy", "notifications", "debug"])
+        self.assertEqual(result["menu_options"], ["user", "devices", "periods", "policy", "notifications", "debug", "export"])
 
     async def test_debug_can_be_enabled_and_disabled_without_losing_devices(self):
         for enabled in (True, False):
@@ -85,6 +90,28 @@ class OptionsTests(unittest.TestCase):
                                                        "debug_max_file_mb": 2, "debug_backup_count": 1})
             self.assertEqual(result["data"]["debug_enabled"], enabled)
             self.assertEqual(result["data"]["radiator_entity"], "climate.rad")
+
+    async def test_export_uses_ha_timezone_and_does_not_save_or_reload_options(self):
+        self.flow.config_entry.runtime_data = SimpleNamespace(stopping=False)
+        manager = SimpleNamespace(create_link=Mock(return_value="/api/export?authSig=test"))
+        with patch.dict(sys.modules, {"custom_components.apartment_comfort.export":
+                        fake_module("custom_components.apartment_comfort.export", setup_downloads=lambda hass: manager)}):
+            result = await self.flow.async_step_export({"start": "2026-11-22T10:00:00",
+                                                      "end": "2026-11-22T11:00:00", "anonymize": False})
+        self.assertEqual(result["step_id"], "export_ready")
+        args = manager.create_link.call_args.args
+        self.assertEqual(args[1].isoformat(), "2026-11-22T00:00:00+00:00")
+        self.assertFalse(args[3])
+        self.assertEqual(self.flow.config_entry.options, {})
+        self.assertEqual((await self.flow.async_step_export_ready({}))["type"], "abort")
+
+    async def test_export_rejects_reversed_dates_and_unloaded_entry(self):
+        result = await self.flow.async_step_export({"start": "2026-11-23T10:00:00",
+                                                  "end": "2026-11-22T11:00:00", "anonymize": True})
+        self.assertEqual(result["errors"]["base"], "invalid_export_range")
+        result = await self.flow.async_step_export({"start": "2026-11-22T10:00:00",
+                                                  "end": "2026-11-22T11:00:00", "anonymize": True})
+        self.assertEqual(result["errors"]["base"], "export_not_loaded")
 
     async def test_notification_settings_are_separate_and_validate_destination(self):
         result = await self.flow.async_step_notifications({"notifications_enabled": True, "notification_service": "notify.all"})
