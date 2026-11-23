@@ -1,11 +1,14 @@
-"""Bounded history bundles downloaded through HA's authenticated HTTP surface."""
+"""Complete saved history bundles through HA's authenticated HTTP surface."""
 
 import asyncio
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
 from pathlib import Path
 from secrets import token_urlsafe
+from shutil import copyfile
+from tempfile import TemporaryDirectory
 from time import monotonic
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -19,55 +22,55 @@ from .history import Anonymizer, records
 from .version import VERSION
 
 EXPORT_TTL = 600
-MAX_RECORDS = 10000
-MAX_BYTES = 16 * 1024 * 1024
 MAX_TICKETS = 16
 
 
+@contextmanager
+def snapshot_history(folder, entry_id, lock):
+    """Copy immutable input files; do not hold up recording while parsing ZIP data."""
+    with TemporaryDirectory(prefix="apartment-comfort-export-") as snapshot:
+        copies = []
+        with lock:
+            base = Path(folder) / f"{entry_id}.jsonl"
+            paths = [p for p in base.parent.glob(f"{base.name}.*")
+                     if p.name.removeprefix(f"{base.name}.").isdigit()]
+            paths.sort(key=lambda p: int(p.suffix[1:]), reverse=True)
+            if base.exists():
+                paths.append(base)
+            for index, path in enumerate(paths):
+                destination = Path(snapshot) / str(index)
+                copyfile(path, destination)
+                copies.append(destination)
+        yield copies
+
+
 def build_bundle(folder, entry_id, lock, start, end, anonymize, diagnostics):
-    """Snapshot under the writer lock, then anonymize/compress outside it."""
+    """Stream all matching saved records from a disk snapshot into the archive."""
     stats = {"exported": 0, "invalid_lines": 0, "truncated": False}
-    rows = []
-    size = 0
-    with lock:
-        base = Path(folder) / f"{entry_id}.jsonl"
-        paths = [p for p in base.parent.glob(f"{base.name}.*")
-                 if p.name.removeprefix(f"{base.name}.").isdigit()]
-        paths.sort(key=lambda p: int(p.suffix[1:]), reverse=True)
-        if base.exists():
-            paths.append(base)
-        for record in records(paths, start, end, stats):
-            # Freeze each record and bound both stored rows and their encoded size.
-            encoded = json.dumps(record, ensure_ascii=False, allow_nan=False)
-            length = len(encoded.encode("utf-8")) + 1
-            if len(rows) >= MAX_RECORDS or size + length > MAX_BYTES:
-                stats["truncated"] = True
-                break
-            rows.append(record)
-            size += length
     cleaner = Anonymizer() if anonymize else None
     buffer = BytesIO()
-    with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
-        with archive.open("history.jsonl", "w") as stream:
-            for record in rows:
+    with snapshot_history(folder, entry_id, lock) as paths, ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
+        with archive.open("history.jsonl", "w", force_zip64=True) as stream:
+            for record in records(paths, start, end, stats):
                 record = cleaner.record(record) if cleaner else record
                 stream.write((json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8"))
-        stats["exported"] = len(rows)
+                stats["exported"] += 1
         report = cleaner.clean(diagnostics) if cleaner else diagnostics
         archive.writestr("diagnostics.json", json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
         archive.writestr("manifest.json", json.dumps({
             "version": VERSION, "created_at": datetime.now(timezone.utc).isoformat(),
             "start": start.isoformat(), "end": end.isoformat(), "anonymized": anonymize,
             "source_files": len(paths), **stats,
-            "limits": {"records": MAX_RECORDS, "uncompressed_history_bytes": MAX_BYTES},
+            "limits": {"records": None, "uncompressed_history_bytes": None},
             "diagnostics_scope": "current_state_at_download_not_historical",
         }, ensure_ascii=False, indent=2))
         archive.writestr("README.txt", (
             "Apartment Comfort\n"
             "history.jsonl: события выбранного периода, включая ошибки и команды.\n"
             "diagnostics.json: текущая диагностика на момент скачивания.\n"
-            "manifest.json: период, число записей, повреждённые строки и лимиты.\n"
-            "truncated=true: сократите период и повторите экспорт.\n"
+            "manifest.json: период, число записей и повреждённые строки.\n"
+            "Экспорт включает все корректные сохранённые события выбранного периода без ограничения количества и объёма.\n"
+            "Удалённые ротацией и ранее не записанные события восстановить нельзя.\n"
             "exported=0: за этот период нет сохранённых событий; запись отладки должна быть включена заранее.\n"
             "Анонимизация удаляет свободный текст ошибок, но сохраняет коды и числовые данные.\n"
             "Времена и показания могут раскрывать распорядок дома.\n"

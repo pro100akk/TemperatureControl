@@ -221,8 +221,8 @@ def build_translations():
         options_section["step"]["export_ready"] = {
             "title": ("Download history", "Скачать историю")[index],
             "description": (
-                '{download_open}Download ZIP{download_close} — this private link expires in 10 minutes. The download opens separately from the HA interface. The archive is built when clicked. Check manifest.json: if truncated is true, select a shorter period; exported=0 means no saved events. Limit: 10,000 records / 16 MiB of history. Closing this form does not change settings.',
-                '{download_open}Скачать ZIP{download_close} — приватная ссылка действует 10 минут. Скачивание открывается отдельно от интерфейса HA. Архив формируется при нажатии. Проверьте manifest.json: при truncated=true выберите меньший период; exported=0 означает отсутствие сохранённых событий. Лимит: 10 000 записей / 16 МиБ истории. Закрытие формы не меняет настройки.')[index],
+                '{download_open}Download ZIP{download_close} — this private link expires in 10 minutes. The download opens separately from the HA interface. The archive is built when clicked. All valid saved events in the selected period are included, without record or size limits. Check manifest.json: exported=0 means no saved events; invalid_lines counts damaged records. Events already removed by log rotation cannot be recovered. Closing this form does not change settings.',
+                '{download_open}Скачать ZIP{download_close} — приватная ссылка действует 10 минут. Скачивание открывается отдельно от интерфейса HA. Архив формируется при нажатии. Включены все корректные сохранённые события выбранного периода без ограничения количества и объёма. В manifest.json exported=0 означает отсутствие сохранённых событий, invalid_lines — число повреждённых строк. Удалённые ротацией события восстановить нельзя. Закрытие формы не меняет настройки.')[index],
         }
         options_section["error"] = dict(options_section["error"], **{
             "invalid_export_range": ("Check the dates: start must not be after end.", "Проверьте даты: начало не должно быть позже конца.")[index],

@@ -1,4 +1,4 @@
-"""ZIP contents, limits, isolation and the authenticated download adapter."""
+"""Complete ZIP contents, snapshot isolation and authenticated downloads."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -78,19 +78,64 @@ class BundleTests(unittest.TestCase):
         self.assertFalse(manifest["anonymized"])
         self.assertEqual(report["issues"], ["private current error"])
 
-    def test_empty_range_and_limits_are_explicit(self):
+    def test_empty_range_and_unlimited_export_are_explicit(self):
         _, manifest, _ = self.build()
         self.assertEqual(manifest["exported"], 0)
         self.assertFalse(manifest["truncated"])
-        (self.folder / "zone.jsonl").write_text((json.dumps(self.row) + "\n") * 3, encoding="utf-8")
-        with patch.object(export, "MAX_RECORDS", 2):
-            text, manifest, _ = self.build()
-        self.assertEqual(len(text.splitlines()), 2)
-        self.assertTrue(manifest["truncated"])
-        with patch.object(export, "MAX_BYTES", 1):
-            _, manifest, _ = self.build()
-        self.assertTrue(manifest["truncated"])
-        self.assertEqual(manifest["exported"], 0)
+        self.assertEqual(manifest["limits"], {"records": None, "uncompressed_history_bytes": None})
+
+    def test_all_events_beyond_previous_count_and_byte_limits_in_both_modes(self):
+        count = 10002
+        for name, begin, end in (("zone.jsonl.1", 0, 5001), ("zone.jsonl", 5001, count)):
+            with (self.folder / name).open("w", encoding="utf-8") as stream:
+                for sequence in range(begin, end):
+                    row = dict(self.row, sequence=sequence,
+                               timestamp=(END if sequence == count - 1 else START).isoformat(),
+                               data=self.row["data"] | {"detail": "x" * 2000})
+                    stream.write(json.dumps(row) + "\n")
+        self.assertGreater(sum(p.stat().st_size for p in self.folder.iterdir()), 16 * 1024 * 1024)
+        for anonymous in (False, True):
+            with self.subTest(anonymous=anonymous):
+                text, manifest, _ = self.build(anonymous)
+                rows = [json.loads(line) for line in text.splitlines()]
+                self.assertEqual([row["sequence"] for row in rows], list(range(count)))
+                self.assertEqual(rows[-1]["timestamp"], END.isoformat())
+                self.assertEqual(manifest["exported"], count)
+                self.assertFalse(manifest["truncated"])
+                self.assertEqual(manifest["source_files"], 2)
+
+    def test_snapshot_releases_writer_lock_and_survives_source_rotation(self):
+        original = self.folder / "zone.jsonl"
+        original.write_text(json.dumps(self.row) + "\n", encoding="utf-8")
+        lock = Lock()
+        saved_paths = []
+        real_records = export.records
+        def read_snapshot(paths, *args):
+            self.assertFalse(lock.locked())
+            saved_paths.extend(paths)
+            original.unlink()
+            return real_records(paths, *args)
+        with patch.object(export, "records", side_effect=read_snapshot):
+            body = export.build_bundle(self.folder, "zone", lock, START, END, False, {})
+        with ZipFile(BytesIO(body)) as archive:
+            self.assertEqual(json.loads(archive.read("history.jsonl")), self.row)
+        self.assertTrue(saved_paths)
+        self.assertTrue(all(not path.exists() for path in saved_paths))
+
+    def test_failed_snapshot_cleans_temporary_files_and_preserves_source(self):
+        original = self.folder / "zone.jsonl"
+        content = json.dumps(self.row) + "\n"
+        original.write_text(content, encoding="utf-8")
+        saved_paths = []
+        def failed_copy(source, destination):
+            saved_paths.append(destination)
+            destination.write_text("partial", encoding="utf-8")
+            raise OSError("disk full")
+        with patch.object(export, "copyfile", side_effect=failed_copy):
+            with self.assertRaises(OSError):
+                self.build()
+        self.assertTrue(all(not path.exists() for path in saved_paths))
+        self.assertEqual(original.read_text(encoding="utf-8"), content)
 
     def test_range_excludes_old_events(self):
         old = dict(self.row, timestamp="2026-11-21T01:00:00+00:00")
