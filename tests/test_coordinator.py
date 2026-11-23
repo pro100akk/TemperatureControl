@@ -76,6 +76,33 @@ def state(value, **attrs):
 
 
 class AdapterTests(unittest.TestCase):
+    async def test_weather_waits_for_entity_then_fetches_without_half_hour_delay(self):
+        self.c.config["weather_entity"] = "weather.home"
+        self.hass.services.async_call.side_effect = None
+        self.hass.services.async_call.return_value = {"weather.home": {"forecast": [{"temperature": 2}]}}
+        for value in (None, "unknown", "unavailable"):
+            if value is not None:
+                self.states["weather.home"] = state(value)
+            await self.c._weather()
+        self.hass.services.async_call.assert_not_awaited()
+        self.states["weather.home"] = state("sunny")
+        await self.c._weather()
+        self.assertEqual(self.c.weather_rows, [{"temperature": 2}])
+        await self.c._weather()
+        self.assertEqual(self.hass.services.async_call.await_count, 1)
+
+    async def test_weather_failure_retries_after_one_minute_then_uses_normal_interval(self):
+        self.c.config["weather_entity"] = "weather.home"
+        self.states["weather.home"] = state("sunny")
+        self.hass.services.async_call.side_effect = [FakeError("not loaded"),
+            {"weather.home": {"forecast": [{"temperature": 3}]}}]
+        for now, count in ((1000, 1), (1059, 1), (1060, 2), (1120, 2)):
+            with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=now):
+                await self.c._weather()
+            self.assertEqual(self.hass.services.async_call.await_count, count)
+        self.assertEqual(self.c.weather_rows, [{"temperature": 3}])
+        self.assertFalse(self.c.weather_failed)
+
     async def test_heat_only_missing_step_uses_confirmable_whole_degrees(self):
         self.temperature_only_radiator(current_temperature=27)
         self.c.inputs.temperature = 25.4
@@ -380,6 +407,40 @@ class AdapterTests(unittest.TestCase):
         await self.c.async_tick()
         self.assertEqual(self.c.engine.pid.integral, 0)
         self.assertIsNone(self.c.engine.pid.previous)
+
+    async def test_external_fan_does_not_erase_primary_pi_history(self):
+        self.c.config.update(control_enabled=True, controller="pi",
+                             radiator_fan_entity="fan.external",
+                             radiator_temperature_entity="sensor.surface")
+        self.c.engine.config.update(self.c.config)
+        self.states["sensor.room"].state = "21"
+        self.states["sensor.surface"] = state("40", unit_of_measurement="°C")
+        self.states["fan.external"] = state("on", percentage=20)
+        for now in (1000, 1060):
+            with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=now):
+                await self.c.async_tick()
+        self.assertGreater(self.c.engine.pid.integral, 0)
+        self.assertIn("radiator_fan_entity: externally active", self.c.issues)
+        self.assertNotIn("fan.external", self.c.owned)
+        self.assertEqual(self.states["fan.external"].attributes["percentage"], 20)
+
+    async def test_exhaust_error_does_not_erase_primary_pi_history(self):
+        self.c.config.update(control_enabled=True, controller="pi")
+        self.c.engine.config.update(self.c.config)
+        self.states["sensor.room"].state = "21"
+        async def failed_exhaust(*args):
+            self.c.issues.append("shower_exhaust_entity: failed")
+        with patch.object(self.c, "_exhaust", side_effect=failed_exhaust):
+            for now in (1000, 1060):
+                with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=now):
+                    await self.c.async_tick()
+        self.assertGreater(self.c.engine.pid.integral, 0)
+
+    async def test_external_fan_is_reported_even_without_heat_demand(self):
+        self.states["fan.external"] = state("on", percentage=20)
+        await self.c._fan_device("fan.external", 0)
+        self.assertIn("radiator_fan_entity: externally active", self.c.issues)
+        self.hass.services.async_call.assert_not_awaited()
 
     async def test_compensation_does_not_seize_unowned_or_use_stale_local_sensor(self):
         self.c.inputs.temperature = 25.5

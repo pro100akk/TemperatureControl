@@ -59,6 +59,10 @@ class Anonymizer:
         # Code literals form the allowlist, not arbitrary strings from the journal.
         for path in Path(__file__).parent.glob("*.py"):
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                # record(..., success=True) uses keyword identifiers, not string
+                # literals. Keep those schema keys readable in exported logs too.
+                if isinstance(node, ast.keyword) and node.arg is not None:
+                    self.safe.add(node.arg)
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
                     if re.fullmatch(r"[a-z_][a-z_0-9]*", node.value):
                         self.safe.add(node.value)

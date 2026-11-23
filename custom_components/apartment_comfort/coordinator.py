@@ -60,6 +60,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
         self.exhaust_contexts = []
         self.weather_rows = []
         self.weather_updated = None
+        self.weather_failed = False
         self.estimate_status = None
         self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
 
@@ -186,8 +187,15 @@ class ComfortCoordinator(DataUpdateCoordinator):
         entity = self.config.get("weather_entity")
         if not entity:
             return
+        state = self.hass.states.get(entity)
+        if state is None or state.state in ("unknown", "unavailable"):
+            # HA may load this integration before the weather platform.
+            self.weather_rows = []
+            self.weather_updated = None
+            return
         now = monotonic()
-        if self.weather_updated is not None and now - self.weather_updated < 1800:
+        interval = 60 if self.weather_failed else 1800
+        if self.weather_updated is not None and now - self.weather_updated < interval:
             return
         self.weather_updated = now
         self.weather_rows = []
@@ -196,7 +204,9 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 "weather", "get_forecasts", {"entity_id": entity, "type": "hourly"},
                 blocking=True, return_response=True)
             self.weather_rows = (response or {}).get(entity, {}).get("forecast", [])
+            self.weather_failed = False
         except (HomeAssistantError, ValueError, TypeError) as err:
+            self.weather_failed = True
             self.debug.record("weather_error", error_type=type(err).__name__, error=str(err))
             self.issues.append(f"weather forecast: {err}")
 
@@ -394,12 +404,11 @@ class ComfortCoordinator(DataUpdateCoordinator):
             self.decision = self.engine.evaluate(
                 self.inputs, now, self.mode, self.override, predicted_temperature=predicted)
             if self.config["control_enabled"] and not self.manual_hold:
-                read_issue_count = len(self.issues)
-                await self._apply()
+                climate_ok = await self._apply()
+                if not climate_ok:
+                    self.engine.pid.reset()
                 await self._exhaust("shower_exhaust_entity", 100 if self.decision.shower_requested else 0)
                 await self._exhaust("kitchen_exhaust_entity", self.decision.kitchen_airflow_percent)
-                if len(self.issues) > read_issue_count:
-                    self.engine.pid.reset()
             elif not self.config["control_enabled"] and self.owned:
                 await self._release_all()
             self._check_commands()
@@ -740,6 +749,9 @@ class ComfortCoordinator(DataUpdateCoordinator):
         if not entity_id:
             return
         if not percent:
+            state = self.hass.states.get(entity_id)
+            if entity_id not in self.owned and state is not None and state.state == "on":
+                self.issues.append("radiator_fan_entity: externally active")
             await self._off(entity_id)
             return
         state = self._state("radiator_fan_entity", entity_id=entity_id)
@@ -764,7 +776,9 @@ class ComfortCoordinator(DataUpdateCoordinator):
             self.last_commands[entity_id] = (desired, monotonic())
 
     async def _apply(self):
+        """Apply outputs; report whether the primary temperature loop is available."""
         d = self.decision
+        issue_count = len(self.issues)
         # First release opposite mode; never start the other side after a failed stop.
         wanted = {"radiator_entity": d.radiator, "floor_entity": d.floor, "ac_entity": d.cooling}
         released = True
@@ -779,7 +793,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
         if not released:
             self.issues.append("interlock: failed to stop an appliance")
             await self._fan(0)
-            return
+            return False
         # External opposite-mode appliances also block conflicting operation.
         opposite = ("radiator_entity", "floor_entity") if d.cooling else ("ac_entity",)
         for key in opposite:
@@ -796,15 +810,17 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 if state is None or surface_hot_or_unknown or (state.state != "off" and not standby):
                     self.issues.append(f"interlock: {key} not confirmed off")
                     await self._fan(0)
-                    return
+                    return False
         radiator_ok = await self._climate("radiator_entity", d.radiator, "heat", d.actuator_target or d.target)
-        await self._climate("floor_entity", d.floor, "heat", d.target)
-        await self._climate("ac_entity", d.cooling, "cool", d.actuator_target or d.target)
+        floor_ok = await self._climate("floor_entity", d.floor, "heat", d.target)
+        ac_ok = await self._climate("ac_entity", d.cooling, "cool", d.actuator_target or d.target)
+        climate_ok = radiator_ok and floor_ok and ac_ok and len(self.issues) == issue_count
         # A failed valve adjustment does not make an already hot radiator cold.
         # Only fresh surface evidence may bypass that failure, never hvac_action.
         surface_hot = (self.radiator_heat_source == "surface"
                        and self.inputs.radiator_heating is True)
         await self._fan(d.fan_percent if d.radiator and (radiator_ok or surface_hot) else 0)
+        return climate_ok
 
     async def _persist(self):
         await self.store.async_save(self._snapshot())

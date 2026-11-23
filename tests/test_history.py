@@ -24,6 +24,17 @@ def recorded_cycle(engine, data, now, mode="heat"):
 
 
 class ReplayTests(unittest.TestCase):
+    def test_anonymization_preserves_keyword_schema_fields(self):
+        record = {"event": "command_result", "data": {
+            "success": False, "error_type": "HomeAssistantError", "duration_ms": 14650,
+            "error": "private device address", "entity_id": "climate.private"}}
+        cleaned = Anonymizer().record(record)["data"]
+        self.assertIs(cleaned["success"], False)
+        self.assertEqual(cleaned["error_type"], "HomeAssistantError")
+        self.assertEqual(cleaned["duration_ms"], 14650)
+        self.assertEqual(cleaned["error"], "[redacted]")
+        self.assertNotIn("private", json.dumps(cleaned))
+
     def test_frozen_pid_outage_and_sensor_failure_history(self):
         path = Path(__file__).parent / "fixtures/policy_history.jsonl"
         history = list(records([path]))
