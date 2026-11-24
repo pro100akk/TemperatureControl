@@ -302,7 +302,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(self.states["climate.rad"].attributes["temperature"], 41)
         self.assertEqual(self.c.radiator_command["setpoint"], 5)
 
-    async def test_running_external_groups_report_blocked_then_transfer_when_off(self):
+    async def test_running_fan_groups_are_adopted_and_set_to_requested_speed(self):
         from custom_components.apartment_comfort.engine import Decision
         from custom_components.apartment_comfort.diagnostics import async_get_config_entry_diagnostics
         fans = ["fan.group_a", "fan.group_b"]
@@ -311,24 +311,23 @@ class AdapterTests(unittest.TestCase):
         for entity in fans:
             self.states[entity] = state("on", percentage=70)
         await self.c._fan(30)
-        self.assertEqual(len(self.c.issues), 2)
-        self.assertEqual(self.c.fan_status, "waiting_or_blocked")
-        self.hass.services.async_call.assert_not_awaited()
+        self.assertEqual(self.c.issues, [])
+        self.assertEqual(self.c.fan_status, "on")
+        self.assertEqual(self.hass.services.async_call.await_count, 2)
         self.entry.runtime_data = self.c
         self.c.engine.model.rates["radiator_fan|fans=" + ",".join(fans)] = {"count": 1}
         report = await async_get_config_entry_diagnostics(self.hass, self.entry)
-        self.assertEqual(len(report["issues"]), 2)
-        self.assertTrue(all(row["externally_active"] for row in report["radiator_fans"]))
-        self.assertEqual(report["radiator_fans"][0]["percentage"], 70)
+        self.assertEqual(len(report["issues"]), 0)
+        self.assertTrue(all(row["owned"] for row in report["radiator_fans"]))
+        self.assertEqual(report["radiator_fans"][0]["percentage"], 30)
         self.assertNotIn("fan.group_a", str(report))
-        for entity in fans:
-            self.states[entity].state = "off"
         await self.c._fan(30)
         self.assertEqual(self.c.fan_status, "on")
         self.assertTrue(all(self.states[e].attributes["percentage"] == 30 for e in fans))
         self.assertTrue(set(fans) <= self.c.owned)
 
     async def test_three_fans_run_and_release_independently(self):
+        self.c.config["control_enabled"] = True
         fans = ["fan.one", "switch.two", "light.three"]
         self.c.config["radiator_fan_entity"] = fans
         for entity in fans:
@@ -343,16 +342,17 @@ class AdapterTests(unittest.TestCase):
         self.assertFalse(self.c.owned)
 
     async def test_unavailable_fan_does_not_block_other_fans(self):
+        self.c.config["control_enabled"] = True
         self.c.config["radiator_fan_entity"] = ["fan.missing", "switch.good", "switch.external"]
         self.states["switch.good"] = state("off")
         self.states["switch.external"] = state("on")
         await self.c._fan(40)
         self.assertEqual(self.states["switch.good"].state, "on")
-        self.assertNotIn("switch.external", self.c.owned)
+        self.assertIn("switch.external", self.c.owned)
         self.assertIsNone(self.c._read().radiator_fan)
         await self.c._fan(0)
         self.assertEqual(self.states["switch.good"].state, "off")
-        self.assertEqual(self.states["switch.external"].state, "on")
+        self.assertEqual(self.states["switch.external"].state, "off")
 
     async def test_multiple_fan_ownership_restored_and_watched(self):
         fans = ["switch.one", "switch.two"]
@@ -420,9 +420,9 @@ class AdapterTests(unittest.TestCase):
             with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=now):
                 await self.c.async_tick()
         self.assertGreater(self.c.engine.pid.integral, 0)
-        self.assertIn("radiator_fan_entity: externally active", self.c.issues)
-        self.assertNotIn("fan.external", self.c.owned)
-        self.assertEqual(self.states["fan.external"].attributes["percentage"], 20)
+        self.assertFalse(any("externally active" in issue for issue in self.c.issues))
+        self.assertIn("fan.external", self.c.owned)
+        self.assertGreater(self.states["fan.external"].attributes["percentage"], 20)
 
     async def test_exhaust_error_does_not_erase_primary_pi_history(self):
         self.c.config.update(control_enabled=True, controller="pi")
@@ -436,11 +436,89 @@ class AdapterTests(unittest.TestCase):
                     await self.c.async_tick()
         self.assertGreater(self.c.engine.pid.integral, 0)
 
-    async def test_external_fan_is_reported_even_without_heat_demand(self):
-        self.states["fan.external"] = state("on", percentage=20)
-        await self.c._fan_device("fan.external", 0)
-        self.assertIn("radiator_fan_entity: externally active", self.c.issues)
+    async def test_running_fans_are_stopped_without_heat_demand(self):
+        self.c.config.update(control_enabled=True, radiator_fan_entity=["fan.first", "fan.second"])
+        for entity in ("fan.first", "fan.second"):
+            self.states[entity] = state("on", percentage=20)
+        await self.c._fan(0)
+        self.assertTrue(all(self.states[e].state == "off" for e in ("fan.first", "fan.second")))
+        self.assertFalse(self.c.owned)
+
+    async def test_fan_changes_restore_output_without_manual_hold_or_throttle(self):
+        self.c.config.update(control_enabled=True, radiator_fan_entity="fan.rad")
+        self.states["fan.rad"] = state("off", percentage=0)
+        await self.c._fan(40)
+        for value, percentage, user in (("on", 80, "user"), ("off", 0, None)):
+            old = self.states["fan.rad"]
+            new = state(value, percentage=percentage)
+            new.context = SimpleNamespace(id="external", parent_id=None, user_id=user)
+            self.states["fan.rad"] = new
+            with patch.object(self.hass, "async_create_task", side_effect=lambda coro: coro.close()):
+                self.c._changed(SimpleNamespace(data={"entity_id": "fan.rad", "old_state": old, "new_state": new}))
+            self.assertFalse(self.c.manual_hold)
+            await self.c._fan(40)
+            self.assertEqual((new.state, new.attributes["percentage"]), ("on", 40))
+        self.assertEqual(self.hass.services.async_call.await_count, 3)
+
+    async def test_disabled_fans_remain_available_to_external_control(self):
+        self.c.config["radiator_fan_entity"] = "fan.rad"
+        for enabled, mode in ((False, "heat"), (True, "off")):
+            self.c.config["control_enabled"] = enabled
+            self.c.mode = mode
+            self.states["fan.rad"] = state("on", percentage=80)
+            await self.c._fan(0)
+            await self.c._fan(40)
+            self.assertEqual(self.states["fan.rad"].attributes["percentage"], 80)
         self.hass.services.async_call.assert_not_awaited()
+
+    async def test_disabling_control_releases_fans_once_then_leaves_them_alone(self):
+        self.c.config.update(control_enabled=True, radiator_fan_entity="fan.rad")
+        self.states["fan.rad"] = state("off", percentage=0)
+        await self.c._fan(40)
+        await self.c.async_set_mode("off")
+        self.assertEqual(self.states["fan.rad"].state, "off")
+        self.states["fan.rad"].state = "on"
+        self.states["fan.rad"].attributes["percentage"] = 80
+        self.hass.services.async_call.reset_mock()
+        await self.c.async_tick()
+        self.assertEqual(self.states["fan.rad"].state, "on")
+        self.hass.services.async_call.assert_not_awaited()
+
+    async def test_restart_adopts_running_fan_without_saved_ownership(self):
+        self.entry.options = self.entry.data | {"control_enabled": True,
+            "radiator_fan_entity": "fan.rad"}
+        self.states["sensor.room"].state = "25"
+        self.states["fan.rad"] = state("on", percentage=20)
+        restored = ComfortCoordinator(self.hass, self.entry)
+        await restored.async_initialize()
+        self.assertEqual(self.states["fan.rad"].state, "off")
+
+    async def test_manual_climate_change_still_pauses_control(self):
+        new = state("heat", temperature=24)
+        new.context = SimpleNamespace(id="user-change", user_id="user", parent_id=None)
+        with patch.object(self.hass, "async_create_task", side_effect=lambda coro: coro.close()):
+            self.c._changed(SimpleNamespace(data={"entity_id": "climate.rad",
+                "old_state": self.states["climate.rad"], "new_state": new}))
+        self.assertTrue(self.c.manual_hold)
+
+    async def test_exclusive_fan_control_preserves_failure_backoff(self):
+        self.c.config.update(control_enabled=True, radiator_fan_entity="fan.rad")
+        self.states["fan.rad"] = state("on", percentage=20)
+        self.hass.services.async_call.side_effect = FakeError("unreachable")
+        with patch("custom_components.apartment_comfort.coordinator.monotonic", return_value=1000):
+            await self.c._fan(40)
+            await self.c._fan(40)
+        self.assertEqual(self.hass.services.async_call.await_count, 1)
+
+    async def test_climate_pause_keeps_only_radiator_fans_off(self):
+        self.c.config.update(control_enabled=True, radiator_fan_entity="fan.rad")
+        self.c.manual_hold = True
+        self.states["fan.rad"] = state("on", percentage=80)
+        self.states["climate.rad"].state = "heat"
+        await self.c.async_tick()
+        self.assertEqual(self.states["fan.rad"].state, "off")
+        self.assertEqual(self.states["climate.rad"].state, "heat")
+        self.assertTrue(self.c.manual_hold)
 
     async def test_compensation_does_not_seize_unowned_or_use_stale_local_sensor(self):
         self.c.inputs.temperature = 25.5
@@ -585,6 +663,7 @@ class AdapterTests(unittest.TestCase):
             s.attributes["percentage"] = data["percentage"]
 
     async def test_relay_fan_on_off_and_no_speed_commands(self):
+        self.c.config["control_enabled"] = True
         for domain in ("switch", "light"):
             entity = f"{domain}.ventiliator"
             self.c.config["radiator_fan_entity"] = entity
@@ -600,7 +679,7 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(self.states[entity].state, "off")
             self.assertNotIn(entity, self.c.owned)
 
-    async def test_external_relay_is_not_seized(self):
+    async def test_external_relay_is_not_seized_when_control_disabled(self):
         self.c.config["radiator_fan_entity"] = "light.ventiliator"
         self.states["light.ventiliator"] = state("on")
         await self.c._fan(30)
@@ -608,6 +687,7 @@ class AdapterTests(unittest.TestCase):
         self.hass.services.async_call.assert_not_awaited()
 
     async def test_fan_speed_control_is_preserved(self):
+        self.c.config["control_enabled"] = True
         self.c.config["radiator_fan_entity"] = "fan.radiator"
         self.states["fan.radiator"] = state("off", percentage=0)
         await self.c._fan(30)

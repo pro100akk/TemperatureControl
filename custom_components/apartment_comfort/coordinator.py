@@ -154,11 +154,22 @@ class ComfortCoordinator(DataUpdateCoordinator):
             self.ac_stopped = monotonic()
         # User-originated physical edits suspend automatic management until resume.
         if (new and event.data["entity_id"] in set(entity_ids(self.config, ACTUATOR_FIELDS))
+                and entity not in entity_ids(self.config, ("radiator_fan_entity",))
                 and new.context.user_id is not None and new.context.parent_id is None):
             self.manual_hold = True
             self.commands.cancel(entity)
             self.owned.discard(event.data["entity_id"])
             self._save()
+        # Fan changes never suspend the controller. A changed output invalidates
+        # the successful-command throttle so the next cycle can restore it.
+        if entity in entity_ids(self.config, ("radiator_fan_entity",)) and new:
+            last = self.last_commands.get(entity, (None, 0))[0]
+            if last:
+                matches = (new.state == "off" if last == ("off",) else
+                           new.state == "on" and (last == ("on",) or
+                           new.attributes.get("percentage") == last[1]))
+                if not matches:
+                    self.last_commands.pop(entity, None)
         self._check_commands()
         self.hass.async_create_task(self.async_tick())
 
@@ -411,6 +422,10 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 await self._exhaust("kitchen_exhaust_entity", self.decision.kitchen_airflow_percent)
             elif not self.config["control_enabled"] and self.owned:
                 await self._release_all()
+            elif self.manual_hold:
+                # A manual climate pause must not leave externally started
+                # radiator fans heating the room without a managed heat request.
+                await self._fan(0)
             self._check_commands()
             self.issues.extend(self.commands.issues())
             for entity in entity_ids(self.config, (*ACTUATOR_FIELDS, *EXHAUST_FIELDS)):
@@ -746,19 +761,24 @@ class ComfortCoordinator(DataUpdateCoordinator):
             await self._fan_device(entity, percent)
 
     async def _fan_device(self, entity_id, percent):
-        if not entity_id:
+        if not entity_id or entity_id not in entity_ids(self.config, ("radiator_fan_entity",)):
             return
-        if not percent:
-            state = self.hass.states.get(entity_id)
-            if entity_id not in self.owned and state is not None and state.state == "on":
-                self.issues.append("radiator_fan_entity: externally active")
-            await self._off(entity_id)
+        exclusive = (self.config["control_enabled"] and self.mode != "off"
+                     and not self.stopping)
+        if not exclusive:
+            # Release previously owned fans once; never adopt external devices
+            # while disabled or unloading.
+            if not percent:
+                await self._off(entity_id)
             return
         state = self._state("radiator_fan_entity", entity_id=entity_id)
         if state is None:
             return
-        if entity_id not in self.owned and state.state != "off":
-            self.issues.append("radiator_fan_entity: externally active")
+        if entity_id not in self.owned:
+            self.owned.add(entity_id)
+            await self._persist()
+        if not percent:
+            await self._off(entity_id)
             return
         relay = entity_id.split(".")[0] in ("switch", "light")
         if state.state == "on" and (relay or state.attributes.get("percentage") == percent):

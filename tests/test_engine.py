@@ -20,6 +20,17 @@ class PolicyTests(unittest.TestCase):
         for period, expected in [("morning", 22), ("day", 22), ("evening", 22), ("pre_sleep", 21), ("night", 20.5), ("pre_wake", 22)]:
             self.assertEqual(self.evaluate(period=period).target, expected)
 
+    def test_idle_reason_reports_temperature_outside_band_without_actuation(self):
+        for controller in ("hysteresis", "pi", "pid"):
+            for mode, temperature, reason in (("heat", 24, "above_target"),
+                                               ("cool", 20, "below_target"),
+                                               ("heat", 22, "within_band")):
+                engine = Engine({"controller": controller, "radiator_entity": "climate.rad",
+                                 "ac_entity": "climate.ac"})
+                d = engine.evaluate(Inputs(temperature=temperature, period="day"), 0, mode)
+                self.assertEqual((d.status, d.reason), ("idle", reason))
+                self.assertFalse(d.radiator or d.floor or d.cooling)
+
     def test_custom_period_values(self):
         engine = Engine({"night_state": "Сон"})
         self.assertEqual(engine.evaluate(Inputs(temperature=20, period="Сон"), 0).target, 20.5)

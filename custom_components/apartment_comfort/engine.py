@@ -261,6 +261,12 @@ class Engine:
             elif mode == "cool" and self.cooling and c.get("ac_entity"):
                 d.cooling = True
                 d.status, d.reason = "cooling", "above_target"
+            if d.status == "idle" and d.reason == "within_band":
+                # Idle means no requested actuation, not necessarily comfort.
+                if error < -band:
+                    d.reason = "above_target"
+                elif error > band:
+                    d.reason = "below_target"
             if error <= 0:
                 self.floor_locked = False
             if not self.heating or mode != "heat":

@@ -43,9 +43,12 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(history[3]["data"]["decision"]["reason"], "temperature_unavailable")
         self.assertEqual(history[-1]["data"]["decision"]["status"], "off")
         anonymizer = Anonymizer()
-        for record in history:
-            self.assertEqual(replay_cycle(record["data"])["differences"], {})
-            self.assertEqual(replay_cycle(anonymizer.record(record)["data"])["differences"], {})
+        for index, record in enumerate(history):
+            # Keep the original log frozen: only the inaccurate idle reason
+            # changed; replay must still reproduce every actuator decision.
+            expected = {"reason": {"recorded": "within_band", "replayed": "above_target"}} if index == 4 else {}
+            self.assertEqual(replay_cycle(record["data"])["differences"], expected)
+            self.assertEqual(replay_cycle(anonymizer.record(record)["data"])["differences"], expected)
 
     def test_cli_exports_selected_range_and_replays_export(self):
         from contextlib import redirect_stdout
