@@ -409,6 +409,7 @@ class ComfortCoordinator(DataUpdateCoordinator):
                 self.override = None
             if self.manual_hold or not self.config["control_enabled"]:
                 self.engine.pid.reset()
+                self.engine.fan_ramp = None
             predicted, self.estimate_status = self.engine.model.estimate(
                 self.inputs, self.config["forecast_minutes"], self.config)
             replay = checkpoint(self.engine, now, predicted) if self.debug.enabled else None
@@ -757,6 +758,8 @@ class ComfortCoordinator(DataUpdateCoordinator):
         return any(state.state == "on" for state in states)
 
     async def _fan(self, percent):
+        if not percent:
+            self.engine.fan_ramp = None
         for entity in dict.fromkeys(entity_ids(self.config, ("radiator_fan_entity",))):
             await self._fan_device(entity, percent)
 

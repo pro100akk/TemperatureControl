@@ -2,7 +2,7 @@
 import unittest
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import bootstrap  # noqa: F401
 import test_coordinator as adapter
@@ -167,8 +167,10 @@ class VentilationAdapterTests(unittest.TestCase):
         self.states["weather.home"] = state("rainy", temperature=10, temperature_unit="°C", humidity=75)
         self.states["sensor.outside"] = state("3", unit_of_measurement="°C")
         self.c.config["forecast_minutes"] = 60
-        self.c.weather_rows = [{"datetime": (dt_module.utcnow() + timedelta(hours=1, milliseconds=1)).isoformat(), "temperature": 12}]
-        data = self.c._read()
+        now = dt_module.utcnow()
+        self.c.weather_rows = [{"datetime": (now + timedelta(hours=1)).isoformat(), "temperature": 12}]
+        with patch.object(dt_module, "utcnow", return_value=now):
+            data = self.c._read()
         self.assertEqual(data.outdoor_temperature, 3)
         self.assertAlmostEqual(data.weather_temperature_delta, 2, places=3)
         self.assertEqual(data.weather_condition, "rainy")

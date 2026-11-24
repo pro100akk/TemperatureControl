@@ -13,7 +13,7 @@ def checkpoint(engine, now, predicted):
         "version": 1, "now": now, "predicted": predicted,
         "config": {k: v for k, v in engine.config.items() if k not in ("name", "notification_service")},
         "engine": {k: dict(v) if isinstance(v, dict) else v
-                   for k in ENGINE_FIELDS for v in (getattr(engine, k),)},
+                   for k in (*ENGINE_FIELDS, "fan_ramp") for v in (getattr(engine, k),)},
         "pid": {k: getattr(engine.pid, k) for k in PID_FIELDS},
     }
 
@@ -24,6 +24,8 @@ def replay_cycle(data, config_overrides=None):
     if saved["version"] != 1:
         raise ValueError("Unsupported replay checkpoint version")
     engine = Engine(saved["config"] | (config_overrides or {}))
+    if saved["engine"].get("fan_ramp") is not None:
+        engine.fan_ramp = dict(saved["engine"]["fan_ramp"])
     for key in ENGINE_FIELDS:
         value = saved["engine"][key]
         setattr(engine, key, dict(value) if isinstance(value, dict) else value)

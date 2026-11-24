@@ -92,6 +92,40 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(d.fan_reason, "speed_limit_zero")
         self.assertEqual(d.fan_percent, 0)
 
+    def test_sustained_deficit_increases_fan_despite_valve_pid_resets(self):
+        from custom_components.apartment_comfort.replay import checkpoint, replay_cycle
+        from dataclasses import asdict
+        import json
+
+        for controller in ("pid", "pi", "hysteresis"):
+            engine = Engine(self.engine.config | {"controller": controller})
+            data = Inputs(temperature=21.5, period="day", radiator_temperature=40)
+            first = engine.evaluate(data, 0).fan_percent
+            for now in range(60, 12001, 60):
+                engine.pid.reset()
+                saved = checkpoint(engine, now, None)
+                decision = engine.evaluate(data, now)
+                self.assertEqual(decision.fan_percent, min(100, first + 5 * (now // 600)))
+            record = dict(replay=saved, inputs=asdict(data), mode="heat", decision=asdict(decision))
+            self.assertFalse(replay_cycle(json.loads(json.dumps(record)))["differences"])
+            data.window = True
+            self.assertEqual(engine.evaluate(data, now + 10).fan_percent, 0)
+            data.window = False
+            self.assertEqual(engine.evaluate(data, now + 20).fan_percent, first)
+
+    def test_fan_ramp_respects_quiet_limit_and_restarts_after_gap_or_recovery(self):
+        self.engine.config.update(controller="hysteresis", night_temperature=22, night_fan_percent=37)
+        data = Inputs(temperature=21.5, period="night", radiator_temperature=40)
+        for now in range(0, 1801, 300):
+            decision = self.engine.evaluate(data, now)
+        self.assertEqual(decision.fan_percent, 37)
+        self.assertEqual(self.engine.evaluate(data, 2400).fan_percent, 30)
+        self.engine.evaluate(data, 2700)
+        data.temperature = 21.9
+        self.assertEqual(self.engine.evaluate(data, 3000).fan_percent, 20)
+        data.temperature = 21.5
+        self.assertEqual(self.engine.evaluate(data, 3010).fan_percent, 30)
+
     def test_pipe_fan_mode_requires_confirmed_heating_and_hot_pipe(self):
         self.engine.config["fan_temperature_source"] = "pipe"
         for heating in (False, None):

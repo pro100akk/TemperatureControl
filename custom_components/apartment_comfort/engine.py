@@ -70,7 +70,18 @@ class Engine:
         self.deficit_since: float | None = None
         self.floor_since: float | None = None
         self.floor_locked = False
+        self.fan_ramp = None
         self.air_flags = {"co2": False, "humidity": False, "shower": False}
+
+    def _ramp_fan(self, base, maximum, target, now):
+        """Raise the minimum request by five points per ten minutes of sustained deficit."""
+        ramp = self.fan_ramp
+        if (ramp is None or ramp["target"] != target or ramp["maximum"] != maximum
+                or not 0 <= now - ramp["last"] <= 300):
+            ramp = self.fan_ramp = dict(target=target, maximum=maximum, start=now, base=base, last=now)
+        ramp["last"] = now
+        minimum = ramp["base"] + 5 * int((now - ramp["start"]) // 600)
+        return int(min(maximum, max(base, minimum)))
 
     def target(self, period: str | None, override: float | None) -> float | None:
         if override is not None:
@@ -231,12 +242,14 @@ class Engine:
                     if (c.get("radiator_fan_entity") and fan_temperature is not None
                             and (not needs_heat_confirmation or data.radiator_heating is True)
                             and fan_temperature > data.temperature + 2):
-                        maximum = c["night_fan_percent"] if data.period in (
-                            c["night_state"], c["pre_sleep_state"], c["pre_wake_state"]
-                        ) else c["max_fan_percent"]
+                        maximum = c["night_fan_percent"] if night else c["max_fan_percent"]
                         d.fan_percent = int(min(maximum, max(20, error * 60)))
                         if c["controller"] in ("pi", "pid"):
                             d.fan_percent = int(min(maximum, max(20, d.demand_percent)))
+                        if error > 0 and error + 1e-9 >= band and d.fan_percent:
+                            d.fan_percent = self._ramp_fan(d.fan_percent, maximum, target, now)
+                        else:
+                            self.fan_ramp = None
                         d.fan_reason = "requested" if d.fan_percent else "speed_limit_zero"
                 if error >= c["floor_deficit"]:
                     if self.deficit_since is None:
@@ -273,8 +286,11 @@ class Engine:
                 self.deficit_since = None
             if not d.floor:
                 self.floor_since = None
+            if not d.fan_percent:
+                self.fan_ramp = None
             return d
         self.heating = self.cooling = False
+        self.fan_ramp = None
         self.pid.reset()
         self.deficit_since = self.floor_since = None
         return d
